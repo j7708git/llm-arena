@@ -59,8 +59,8 @@
   "hash": "…",                 // 去重鍵
   "modelId": "anthropic/claude-sonnet-4",
   "source": "reddit|x|hn|…",
-  "url": "…",
-  "author": "…",
+  "url": "…",                  // 永久連結（R3 確認可取得）
+  "author": "…" | null,        // 允許 null（R3：last30days 結果常缺作者）
   "postedAt": "…",
   "text": "…",
   "label": "positive|negative|neutral",
@@ -80,6 +80,9 @@
 3. **`source` 鍵不封列**：維持開放字串集合（`reddit|x|hn|…` 依 plan 原意可擴充）。
 4. **`evidence` 參照格式**：`[目錄/]檔名.jsonl#l<行號>`，目錄前綴可選。
 5. **`meta.judge.calibrated`**：語意是「已通過 C5 校準」；種子資料必須如實設 `false`。
+6. **`evidence.author` 允許 `null`**（R3 發現，2026-09-29）：`last30days` 的 agent JSON 無
+   `author` 欄、raw profile 也只有部分有。此欄改為 `str | None` 屬於放寬，
+   在 `jason-lab` 尚未開工前完成，不算破壞契約；站方顯示時以「未知作者」處理。
 
 任何放寬都是 v2 的事，需同步 `jason-lab`。
 
@@ -127,7 +130,23 @@
 
 ## 待決事項
 
-- [ ] JEV 具體選用：自架 `laya` 或 `AgentJev-0.6B`／`LLM2Jev`
-- [ ] 三個維度的權重與公式定案
-- [ ] 社群來源清單（哪些 subreddit／論壇值得抓）
+- [x] 社群來源清單（R3 定案，見下「收集策略」）
 - [ ] 排程頻率（每日或每週）
+- [x] JEV 具體選用：待 R1 結論（`docs/research/jev-scoring.md`）
+- [ ] 三個維度的權重與公式定案（C3/C4 階段，慢層 rubric 後定）
+
+## 收集策略（R3 定案，2026-09-29；C2/C5 依此實作）
+
+來源僅 Reddit + Hacker News（零設定下 `last30days` 對模型評比題的實際覆蓋）：
+
+1. **主收集器**：`last30days` 引擎（`mvanhorn/last30days-skill`，Python ≥3.12），
+   用 `--emit=json --json-profile=agent`（v1.3 穩定契約）發現貼文；放大樣本用 `--deep`。
+2. **補缺**：`author` 與 HN 討論頁連結用公開 API 回填——
+   Reddit `.../comments/<id>/.json`、HN Algolia `hn.algolia.com/api/v1`（皆免 key）。
+3. **過濾**：`jobs` 等雜訊來源以 `source` 白名單（reddit／hn）排除；
+   `source_status` 只有 `no-results` 可視為「沒討論」，`rate-limited` 等必須退避重試。
+4. **偏誤標示**：`meta.windowDays`/`notes` 明示 30 天窗口偏袒新模型；
+   低樣本（<20）標「僅供參考」；呈現加「涵蓋來源：Reddit／HN」徽章。
+5. **去重**：正規化內容 hash 為鍵（含跨來源轉貼）。
+
+詳見 `docs/research/last30days-skill.md`（坑清單在該檔第 169 行起）。
