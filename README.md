@@ -6,7 +6,7 @@
 網站（[`jason-lab`](../jason-lab)）讀取本 repo 的資料產物來呈現排行榜。
 
 - 定位：真的能跑、能重跑的評測工具，而不是展示品
-- 狀態：**尚未開始實作**（規劃見 `docs/plan.md`）
+- 狀態：**骨架階段**——CLI 五個子命令都已接上，功能陸續實作中（見 `docs/plan.md`）
 
 ## 產出什麼
 
@@ -50,6 +50,30 @@ arena score          # JEV 逐則評分
 arena build          # 產出 data/scores.json
 arena validate       # 檢查資料是否符合 schema
 ```
+
+## 開發
+
+需求：Python 3.10+（專案用 `uv` 管理虛擬環境，沒有 `uv` 就用 `python3 -m venv`）。
+
+```bash
+# 1. 建立虛擬環境
+uv venv .venv                 # 或：python3 -m venv .venv
+
+# 2. 以可編輯模式安裝（含開發相依：pytest）
+uv pip install --python .venv/bin/python -e ".[dev]"
+# 沒有 uv 時：.venv/bin/pip install -e ".[dev]"
+
+# 3. 執行 CLI
+.venv/bin/arena --help
+.venv/bin/arena build         # 尚未實作的子命令會以非 0 結束碼回報
+
+# 4. 跑測試
+.venv/bin/python -m pytest
+```
+
+也可以不啟用虛擬環境，直接用 `python -m arena` 執行（需先安裝專案）。
+
+尚未實作的子命令會印出「尚未實作」訊息並以結束碼 `3` 收場，不會靜默成功。
 
 ## 注意事項
 
