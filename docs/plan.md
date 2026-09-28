@@ -1,6 +1,7 @@
 # 開發計畫：llm-arena
 
-總計畫：`/home/jason/.opencode/plan/jason-lab-plan.md`
+總覽：`docs/plan-overview.md`
+任務卡：`$HOME/workspace/agent/.openchamber/plans/llm-arena-*.md`
 網站端計畫：`../jason-lab/docs/plan.md`
 
 ## 目標
