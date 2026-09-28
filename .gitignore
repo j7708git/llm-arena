@@ -1,0 +1,19 @@
+# 環境
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# 暫存與快取（原始抓取的中間產物；正式資料在 data/ 且要進版控）
+.scratch/
+cache/
+logs/
+
+# 編輯器／系統
+.DS_Store
+.vscode/
+.idea/
