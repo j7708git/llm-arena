@@ -69,6 +69,20 @@
 }
 ```
 
+### Schema v1 實作裁定（A2，2026-09-29；`jason-lab` 以本节為準）
+
+實作見 `src/arena/schema.py`（pydantic v2，一律 `extra="forbid"`）：
+
+1. **數值範圍**：`score`、`dimensions.quality/speed/price` 為 0～100；
+   `positiveRate`、`confidence`、`prob` 為 0～1；`priceUsdPerMTok.{in,out}` ≥ 0；
+   `windowDays` ≥ 1；`sampleSize` ≥ 0。
+2. **`kind`** 鎖定 `"community-sentiment"`（v1 只有一種；要新增視為 schema 變更）。
+3. **`source` 鍵不封列**：維持開放字串集合（`reddit|x|hn|…` 依 plan 原意可擴充）。
+4. **`evidence` 參照格式**：`[目錄/]檔名.jsonl#l<行號>`，目錄前綴可選。
+5. **`meta.judge.calibrated`**：語意是「已通過 C5 校準」；種子資料必須如實設 `false`。
+
+任何放寬都是 v2 的事，需同步 `jason-lab`。
+
 ## 任務拆分
 
 ### A1 — 專案骨架與 CLI
