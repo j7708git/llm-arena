@@ -1,6 +1,7 @@
 """arena 命令列入口。
 
-目前只有骨架：五個子命令都能被叫到，但尚未實作的子命令會印出明確訊息
+五個子命令都能被叫到；`validate` 已實作（任務 A2，驗證邏輯在
+`arena.validate`／`arena.schema`），其餘尚未實作的子命令會印出明確訊息
 並以非 0 結束碼收場（避免被誤認為成功）。各子命令的實作見 `docs/plan.md`
 的任務拆分（C1 fetch-models、C2 collect、C3 score、C4 build、A2 validate）。
 """
@@ -9,12 +10,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Callable, Sequence
 
 from arena import __version__
+from arena.validate import EXIT_INVALID, EXIT_OK, validate_path
 
 # 尚未實作時使用的結束碼；與 argparse 的使用錯誤（2）刻意區分開。
 EXIT_NOT_IMPLEMENTED = 3
+
+# `arena validate` 未指定路徑時檢查的預設檔案。
+DEFAULT_VALIDATE_PATHS = ["data/scores.json"]
 
 
 def _not_implemented(command: str, task: str, detail: str = "") -> int:
@@ -63,13 +69,33 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    """檢查資料是否符合 schema（任務 A2）。"""
-    paths = args.paths or ["data/scores.json"]
-    return _not_implemented(
-        "validate",
-        "A2",
-        f"將檢查 {', '.join(paths)} 是否符合 schema v1。",
-    )
+    """檢查資料是否符合 schema v1（任務 A2）。
+
+    合法回傳 0；任一檔案不合法回傳 1，並逐條列出「檔案：位置：問題」。
+    """
+    paths: list[str] = args.paths or DEFAULT_VALIDATE_PATHS
+
+    errors: list[str] = []
+    checked: list[str] = []
+    for raw_path in paths:
+        file_errors = validate_path(Path(raw_path))
+        if file_errors:
+            errors.extend(file_errors)
+        else:
+            checked.append(raw_path)
+
+    if errors:
+        for error in errors:
+            print(error, file=sys.stderr)
+        print(
+            f"validate：{len(errors)} 個問題，資料不符合 schema v1。",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+
+    for path in checked:
+        print(f"OK {path}：符合 schema v1")
+    return EXIT_OK
 
 
 def build_parser() -> argparse.ArgumentParser:
