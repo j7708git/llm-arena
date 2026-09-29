@@ -46,7 +46,7 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    """檢查資料是否符合 schema v1（任務 A2）。
+    """檢查資料是否符合 schema v1.1（任務 A2）。
 
     合法回傳 0；任一檔案不合法回傳 1，並逐條列出「檔案：位置：問題」。
     """
@@ -65,13 +65,13 @@ def cmd_validate(args: argparse.Namespace) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         print(
-            f"validate：{len(errors)} 個問題，資料不符合 schema v1。",
+            f"validate：{len(errors)} 個問題，資料不符合 schema v1.1。",
             file=sys.stderr,
         )
         return EXIT_INVALID
 
     for path in checked:
-        print(f"OK {path}：符合 schema v1")
+        print(f"OK {path}：符合 schema v1.1")
     return EXIT_OK
 
 
@@ -97,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("collect", "抓取近 30 天社群貼文，落地為 data/evidence/*.jsonl", cmd_collect),
         ("score", "以 JEV 對逐則貼文評分（含校準機率）", cmd_score),
         ("build", "由 evidence 聚合出 data/scores.json", cmd_build),
-        ("validate", "檢查資料是否符合 schema v1", cmd_validate),
+        ("validate", "檢查資料是否符合 schema v1.1", cmd_validate),
     ]
 
     for name, help_text, handler in commands:
