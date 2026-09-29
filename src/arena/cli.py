@@ -14,58 +14,34 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from arena import __version__
+from arena.build import run as run_build
+from arena.collect import run as run_collect
+from arena.fetch_models import run as run_fetch_models
+from arena.score import run as run_score
 from arena.validate import EXIT_INVALID, EXIT_OK, validate_path
-
-# 尚未實作時使用的結束碼；與 argparse 的使用錯誤（2）刻意區分開。
-EXIT_NOT_IMPLEMENTED = 3
 
 # `arena validate` 未指定路徑時檢查的預設檔案。
 DEFAULT_VALIDATE_PATHS = ["data/scores.json"]
 
 
-def _not_implemented(command: str, task: str, detail: str = "") -> int:
-    """印出「未實作」訊息並回傳結束碼。"""
-    message = f"arena {command}：尚未實作（見 docs/plan.md 任務 {task}）"
-    if detail:
-        message += f"\n  {detail}"
-    print(message, file=sys.stderr)
-    return EXIT_NOT_IMPLEMENTED
-
-
 def cmd_fetch_models(args: argparse.Namespace) -> int:
-    """更新模型清單與定價（任務 C1）。"""
-    return _not_implemented(
-        "fetch-models",
-        "C1",
-        "將合併 config/models.yaml 人工清單與 OpenRouter /api/v1/models 的定價／context。",
-    )
+    """更新模型清單與定價（任務 C1，實作在 arena.fetch_models）。"""
+    return run_fetch_models(args)
 
 
 def cmd_collect(args: argparse.Namespace) -> int:
-    """抓取近 30 天社群貼文（任務 C2）。"""
-    return _not_implemented(
-        "collect",
-        "C2",
-        "將把社群貼文落地為 data/evidence/YYYY-MM-DD.jsonl，並以內容 hash 去重。",
-    )
+    """抓取近 30 天社群貼文（任務 C2，實作在 arena.collect）。"""
+    return run_collect(args)
 
 
 def cmd_score(args: argparse.Namespace) -> int:
-    """JEV 逐則評分（任務 C3）。"""
-    return _not_implemented(
-        "score",
-        "C3",
-        "將以 JEV 家族模型對每則 evidence 分類並輸出校準機率。",
-    )
+    """JEV 逐則評分（任務 C3，實作在 arena.score）。"""
+    return run_score(args)
 
 
 def cmd_build(args: argparse.Namespace) -> int:
-    """由 evidence 聚合出 data/scores.json（任務 C4）。"""
-    return _not_implemented(
-        "build",
-        "C4",
-        "將由 evidence 以公式聚合出 data/scores.json。",
-    )
+    """由 evidence 聚合出 data/scores.json（任務 C4，實作在 arena.build）。"""
+    return run_build(args)
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
