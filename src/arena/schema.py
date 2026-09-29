@@ -35,7 +35,7 @@ SCHEMA_VERSION = 1.1
 
 # evidence 參照格式：`<路徑>.jsonl#l<行號>`。
 # 目錄前綴可省略，所以計畫範例 "evidence/2026-09-29.jsonl#l1204" 與
-# 種子資料的 "sample.jsonl#l1" 都合法。
+# 種子資料的 "evidence.sample.jsonl#l1" 都合法。
 EVIDENCE_REF_PATTERN = r"^(?:[^#\s/]+/)*[^#\s/]+\.jsonl#l[1-9][0-9]*$"
 
 # --- 維度與投票（v1.1）-----------------------------------------------------

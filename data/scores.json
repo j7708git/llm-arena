@@ -1,7 +1,7 @@
 {
   "meta": {
     "schemaVersion": 1.1,
-    "generatedAt": "2026-09-29T01:37:58Z",
+    "generatedAt": "2026-09-29T01:39:37Z",
     "windowDays": 30,
     "kind": "community-sentiment",
     "disclaimer": "社群聲量代理指標，非 benchmark",
@@ -88,11 +88,9 @@
         "evidence/2026-09-29.jsonl#l15",
         "evidence/2026-09-29.jsonl#l16",
         "evidence/2026-09-29.jsonl#l17",
-        "evidence/2026-09-29.jsonl#l18",
-        "evidence/sample.jsonl#l4",
-        "evidence/sample.jsonl#l5"
+        "evidence/2026-09-29.jsonl#l18"
       ],
-      "updatedAt": "2026-09-29T01:37:58Z"
+      "updatedAt": "2026-09-29T01:39:37Z"
     },
     {
       "id": "anthropic/claude-sonnet-4",
@@ -129,13 +127,9 @@
         "evidence/2026-09-29.jsonl#l3",
         "evidence/2026-09-29.jsonl#l4",
         "evidence/2026-09-29.jsonl#l5",
-        "evidence/2026-09-29.jsonl#l6",
-        "evidence/sample.jsonl#l1",
-        "evidence/sample.jsonl#l2",
-        "evidence/sample.jsonl#l3",
-        "evidence/sample.jsonl#l10"
+        "evidence/2026-09-29.jsonl#l6"
       ],
-      "updatedAt": "2026-09-29T01:37:58Z"
+      "updatedAt": "2026-09-29T01:39:37Z"
     },
     {
       "id": "google/gemini-2.5-pro",
@@ -172,11 +166,9 @@
         "evidence/2026-09-29.jsonl#l21",
         "evidence/2026-09-29.jsonl#l22",
         "evidence/2026-09-29.jsonl#l23",
-        "evidence/2026-09-29.jsonl#l24",
-        "evidence/sample.jsonl#l6",
-        "evidence/sample.jsonl#l7"
+        "evidence/2026-09-29.jsonl#l24"
       ],
-      "updatedAt": "2026-09-29T01:37:58Z"
+      "updatedAt": "2026-09-29T01:39:37Z"
     }
   ]
 }
