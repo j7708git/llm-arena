@@ -11,10 +11,13 @@
 
 ## 要做的事
 
-1. 人工標註 100～200 則貼文（從 C2 的 evidence 抽樣，涵蓋不同來源與態度）
+1. 人工標註 100～200 則貼文（從 C2 的 evidence 抽樣，涵蓋不同來源與態度）；
+   **每則標 6 個面向**（overall＋quality/speed/tokenEfficiency/tokenUsage/priceValue，
+   面向可選 not-discussed），依 v1.1 裁定第 8 條的詞彙分工
 2. 計算：
-   - 準確率（混淆矩陣）
+   - 準確率（混淆矩陣；macro-F1）
    - **校準度**：它說 0.8 正面時，實際約 80% 是正面嗎（reliability diagram）
+   - overall 與各面向維度**分別**量 ECE；not-discussed 切片單獨看（決定「資料不足」判定可不可信）
 3. 若校準不佳 → 調整（換模型、溫度、或加 Platt scaling 之類的後處理）
 4. 結果寫進 `docs/research/jev-scoring.md`（含標註資料的位置與評分程式）
 

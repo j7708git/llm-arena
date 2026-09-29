@@ -1,8 +1,8 @@
 # llm-arena · C4：build（聚合成 scores.json）
 
 - 專案：`/home/jason/workspace/agent/llm-arena`
-- 要讀：`docs/plan.md`（**資料契約 schema v1**、C4）
-- 前置：`llm-arena-c1-fetch-models.md`、`llm-arena-c3-score.md`、`llm-arena-a2-schema-validate.md`
+- 要讀：`docs/plan.md`（**資料契約 schema v1.1、實作裁定第 10 條公式**、C4）
+- 前置：`llm-arena-a3-multidim-schema.md`（v1.1 改造完成後才可動工）、`llm-arena-c1-fetch-models.md`、`llm-arena-c3-score.md`、`llm-arena-a2-schema-validate.md`
 
 ## 目標
 
@@ -10,10 +10,14 @@
 
 ## 要做的事
 
-- 分數由**公式計算**：正面提及比例 × 樣本數加權（權重與公式定案後寫進 `config/weights.yaml`，並在 `docs/` 說明）
-- 三個維度：`quality` / `speed` / `price`，另給 `score`（總分）
-- 填入 `sampleSize`、`positiveRate`、`confidence`、`mentionsBySource`、`evidence` 引用位置
-- `meta` 要含 `generatedAt`、`windowDays`、`kind: community-sentiment`、`disclaimer`、`judge`
+- 分數由**公式計算**（裁定第 10 條）：每維度 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)`，
+  以 Wilson 下界依樣本數向 50 收縮；`P+N=0` → 該維度 `null`（資料不足，不是 50 分）
+- 維度為**開放 map**：鍵依 `meta.dimensions`（v1.1：quality/speed/tokenEfficiency/
+  tokenUsage/priceValue）；總分＝`meta.weights` 加權、null 維度剔除後重歸一
+- 填 `dimensionSamples`、`sampleSize`、`positiveRate`（overall）、`confidence`、
+  `mentionsBySource`、`evidence` 引用位置；`priceUsdPerMTok` 自 `data/models.json` 附掛
+- `meta` 要含 `generatedAt`、`windowDays`、`kind`、`disclaimer`、`judge`、`dimensions`、
+  `weights`、`sourcesCovered`
 - 產出後自動跑 `arena validate`
 
 ## 驗收條件

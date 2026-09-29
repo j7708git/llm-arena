@@ -52,68 +52,34 @@ j7708git/jason-lab     ← 網站外殼（Astro）
 - **只做一個 UI**：工具 repo 不另做網站，最多提供本機預覽。
 - 網站取得資料的方式優先選「已發布的資料產物」（GitHub raw／release／npm），讓兩個 repo 完全解耦，不必跨目錄讀檔。
 
-## 4. 資料契約（schema v1 草案）
+## 4. 資料契約（schema v1.1，2026-09-29 修訂）
 
-`scores.json`
+> **權威定義在 `llm-arena/docs/plan.md`「資料契約（schema v1.1）」節**（含欄位範圍與
+> 實作裁定 1~10），本節只摘要。jason-lab 開工前以該檔為準。
 
-```jsonc
-{
-  "meta": {
-    "schemaVersion": 1,
-    "generatedAt": "2026-09-29T00:00:00Z",
-    "windowDays": 30,
-    "kind": "community-sentiment",          // 明確標示不是 benchmark
-    "disclaimer": "社群聲量代理指標，非 benchmark",
-    "judge": { "model": "laya", "revision": "<sha>", "calibrated": true },
-    "notes": "近 30 天窗口，會偏袒近期熱門模型"
-  },
-  "models": [
-    {
-      "id": "anthropic/claude-sonnet-4",
-      "name": "Claude Sonnet 4",
-      "provider": "Anthropic",
-      "score": 72.4,
-      "dimensions": {
-        "quality": 78.1,
-        "speed": 61.0,
-        "price": 55.3,
-        "priceUsdPerMTok": { "in": 3.0, "out": 15.0 }
-      },
-      "sampleSize": 412,
-      "positiveRate": 0.68,
-      "confidence": 0.91,
-      "mentionsBySource": { "reddit": 210, "x": 120, "hn": 82 },
-      "evidence": ["evidence/2026-09-29.jsonl#l1204"],
-      "updatedAt": "2026-09-29T00:00:00Z"
-    }
-  ]
-}
-```
+v1→v1.1 重點（依使用者定案：排行榜是 datatable，欄位由社群態度投票聚合）：
 
-`evidence/YYYY-MM-DD.jsonl`（每行一則）
-
-```jsonc
-{
-  "hash": "…",                  // 去重鍵
-  "modelId": "anthropic/claude-sonnet-4",
-  "source": "reddit|x|hn|…",
-  "url": "…",
-  "author": "…",
-  "postedAt": "…",
-  "text": "…",
-  "label": "positive|negative|neutral",
-  "prob": 0.87,                 // 評分器給的校準機率
-  "judge": "laya@<sha>"
-}
-```
+- **維度改為開放 map**，初始 5 維＋總評：`quality`（智能）／`speed`（速度）／
+  `tokenEfficiency`（Token 效率）／`tokenUsage`（Token 用量）／`priceValue`（CP 值）。
+- 網站表格欄位**由 `scores.json` 的 `meta.dimensions` 驅動**；之後加「適合前端／後端／
+  財務…」等用例維度＝管線多問一題，站方不用改版。
+- 每則貼文由 laya 一次 pass 對每個面向回答 `positive / negative / not-discussed`
+  （總評另用 `positive/negative/neutral`），分數由公式聚合：
+  `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)`、Wilson 下界依樣本數向 50 收縮。
+- **某維度全無討論 → 分數為 `null`，站方顯示「資料不足」，不得顯示成 50 分**。
+- 定價（`priceUsdPerMTok`）移到 model 層級，屬硬資料（OpenRouter），不是態度分。
+- `meta.sourcesCovered` 標示目前涵蓋來源（v1：reddit／hn），站方要畫涵蓋徽章。
+- evidence jsonl 的 `label/prob` 改為 `votes` map（逐面向判定＋校準機率），未評分時 null。
 
 ## 5. 資料來源與評分方法
 
 1. **模型清單**：以人工維護的清單為主（只追值得追的），附掛 OpenRouter 公開 API `https://openrouter.ai/api/v1/models` 的定價與 context length；每日抓一次。不要爬 HTML。
 2. **社群評價收集**：排程 agent 使用 `last30days` 技能抓近 30 天討論（Reddit／X／HN／論壇）。
 3. **評分（兩層設計）**：
-   - 慢層（做一次）：用強推理模型＋rubric 定義「品質／速度／價格 CP 值」的判斷準則與邊界案例。
-   - 快層（做很多次）：用 JEV 家族對**逐則貼文**分類「對某模型的態度」並輸出校準機率。
+   - 慢層（做一次）：rubric 定義各面向（智能／速度／Token 效率／Token 用量／CP 值）的
+     判斷準則與邊界案例（初版在 A3 任務卡，C5 標註指南凍結最終版）。
+   - 快層（做很多次）：用 JEV 家族對**逐則貼文一次問 6 題**（總評＋5 面向），
+     输出 `positive/negative/not-discussed` 與校準機率，聚合見 v1.1 裁定第 10 條。
      - 推薦自架 `convaiinnovations/laya`（Apache-2.0，text-classification，System One）或 `AgentJev-0.6B`（~50ms、不解碼 output token，成本極低）。
      - `typesafe/jev-router` 是 router 不是量產評分器，不用於此用途。
 4. **分數是算出來的，不是模型直接給的**：以「正面提及比例 × 樣本數加權」計算，保留公式可驗證。

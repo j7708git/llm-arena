@@ -14,19 +14,41 @@
 - ❌ 網站外觀與頁面（屬於 `jason-lab`）
 - ❌ 對外 API／即時查詢（未來若要做站內投票再評估）
 
-## 資料契約（schema v1）
+## 資料契約（schema v1.1，2026-09-29 修訂）
 
-介面檔案：`data/scores.json`。**此 schema 凍結後才開始各自開發**；變更需同步 `jason-lab`。
+介面檔案：`data/scores.json`。**v1.1 為定稿**（jason-lab 尚未開工，本次修訂不算破壞契約）；
+之後再變更需同步 `jason-lab`。
+
+**v1→v1.1 變化**（依使用者定案：排行榜是 datatable，每欄由 JEV 逐則判斷社群態度後聚合）：
+
+- 維度從固定 3 欄改為**開放 map**，v1.1 初始 5 維＋1 總評；
+  網站表格欄位**由 `meta.dimensions` 驅動**，之後加維度（前端/後端/財務適合度…）
+  只是管線多問一題、meta 多一筆，站方不用改版。
+- evidence 的單筆 `label/prob` 改為 `votes`（各面向的態度判定＋校準機率）。
+- 「這則沒談該面向」是 `not-discussed`（不同於「談了但中立」）；`P+N=0` 的維度分是 `null`，
+  站方顯示「資料不足」，**不得顯示成 50**。
+
+### scores.json
 
 ```jsonc
 {
   "meta": {
-    "schemaVersion": 1,
+    "schemaVersion": 1.1,
     "generatedAt": "2026-09-29T00:00:00Z",
     "windowDays": 30,
     "kind": "community-sentiment",              // 明確標示不是 benchmark
     "disclaimer": "社群聲量代理指標，非 benchmark",
-    "judge": { "model": "laya", "revision": "<sha>", "calibrated": true },
+    "judge": { "model": "laya", "revision": "<sha>", "calibrated": false },
+    "dimensions": [                              // 站方表格欄位的資料來源
+      { "id": "quality",         "label": "智能" },
+      { "id": "speed",           "label": "速度" },
+      { "id": "tokenEfficiency", "label": "Token 效率" },
+      { "id": "tokenUsage",      "label": "Token 用量" },
+      { "id": "priceValue",      "label": "CP 值" }
+    ],
+    "weights": { "quality": 0.5, "speed": 0.2, "tokenEfficiency": 0.05,
+                 "tokenUsage": 0.05, "priceValue": 0.2 },   // 總分權重，build 讀它
+    "sourcesCovered": ["reddit", "hn"],          // 涵蓋徽章（R3 偏誤標示）
     "notes": "近 30 天窗口，會偏袒近期熱門模型"
   },
   "models": [
@@ -34,17 +56,20 @@
       "id": "anthropic/claude-sonnet-4",
       "name": "Claude Sonnet 4",
       "provider": "Anthropic",
-      "score": 72.4,
-      "dimensions": {
+      "score": 72.4,                             // 總分＝weights 加權（null 維度剔除後重歸一）
+      "dimensions": {                            // 鍵 = meta.dimensions[].id，值 0~100 或 null
         "quality": 78.1,
         "speed": 61.0,
-        "price": 55.3,
-        "priceUsdPerMTok": { "in": 3.0, "out": 15.0 }
+        "tokenEfficiency": 66.3,
+        "tokenUsage": 40.2,
+        "priceValue": 55.3
       },
-      "sampleSize": 412,
-      "positiveRate": 0.68,
+      "priceUsdPerMTok": { "in": 3.0, "out": 15.0 },   // 硬資料，來自 models.json，非態度
+      "dimensionSamples": { "quality": 45, "speed": 12, "tokenEfficiency": 0 },
+      "sampleSize": 412,                         // 該模型全部 evidence 筆數
+      "positiveRate": 0.68,                      // overall（總評）的正面率
       "confidence": 0.91,
-      "mentionsBySource": { "reddit": 210, "x": 120, "hn": 82 },
+      "mentionsBySource": { "reddit": 210, "hn": 82 },
       "evidence": ["evidence/2026-09-29.jsonl#l1204"],
       "updatedAt": "2026-09-29T00:00:00Z"
     }
@@ -52,7 +77,7 @@
 }
 ```
 
-`data/evidence/YYYY-MM-DD.jsonl`（每行一則）
+### evidence/YYYY-MM-DD.jsonl（每行一則）
 
 ```jsonc
 {
@@ -63,31 +88,43 @@
   "author": "…" | null,        // 允許 null（R3：last30days 結果常缺作者）
   "postedAt": "…",
   "text": "…",
-  "label": "positive|negative|neutral",
-  "prob": 0.87,                // 評分器給的校準機率
-  "judge": "laya@<sha>"
+  "votes": {                   // 未評分時整個 votes 為 null（C2 落地狀態）
+    "overall":          { "label": "positive|negative|neutral", "prob": 0.87 },
+    "quality":          { "label": "positive|negative|not-discussed", "prob": 0.81 },
+    "speed":            { "label": "…", "prob": 0.66 },
+    "tokenEfficiency":  { "label": "…", "prob": 0.55 },
+    "tokenUsage":       { "label": "…", "prob": 0.49 },
+    "priceValue":       { "label": "…", "prob": 0.90 }
+  },
+  "judge": "laya@<sha>" | null
 }
 ```
 
-### Schema v1 實作裁定（A2，2026-09-29；`jason-lab` 以本节為準）
+### Schema 實作裁定（v1.1，2026-09-29；`jason-lab` 以本節為準）
 
 實作見 `src/arena/schema.py`（pydantic v2，一律 `extra="forbid"`）：
 
-1. **數值範圍**：`score`、`dimensions.quality/speed/price` 為 0～100；
-   `positiveRate`、`confidence`、`prob` 為 0～1；`priceUsdPerMTok.{in,out}` ≥ 0；
-   `windowDays` ≥ 1；`sampleSize` ≥ 0。
-2. **`kind`** 鎖定 `"community-sentiment"`（v1 只有一種；要新增視為 schema 變更）。
-3. **`source` 鍵不封列**：維持開放字串集合（`reddit|x|hn|…` 依 plan 原意可擴充）。
+1. **數值範圍**：`score`、`dimensions.*`（非 null 時）為 0～100；`positiveRate`、
+   `confidence`、`votes.*.prob` 為 0～1；`priceUsdPerMTok.{in,out}` ≥ 0（null 允許，
+   models.json 查無定價時）；`windowDays` ≥ 1；`sampleSize`/`dimensionSamples.*` ≥ 0；
+   `weights` 各值 0～1。
+2. **`kind`** 鎖定 `"community-sentiment"`。
+3. **`source` 鍵不封列**：開放字串集合。
 4. **`evidence` 參照格式**：`[目錄/]檔名.jsonl#l<行號>`，目錄前綴可選。
-5. **`meta.judge.calibrated`**：語意是「已通過 C5 校準」；種子資料必須如實設 `false`。
-6. **`evidence.author` 允許 `null`**（R3 發現，2026-09-29）：`last30days` 的 agent JSON 無
-   `author` 欄、raw profile 也只有部分有。此欄改為 `str | None` 屬於放寬，
-   在 `jason-lab` 尚未開工前完成，不算破壞契約；站方顯示時以「未知作者」處理。
-7. **`evidence.label`／`prob`／`judge` 允許 `null`**（PM 裁定 2026-09-29）：C2 落地的是
-   **未評分**貼文，三欄由 C3 回填。`arena validate` 對「結構合法但尚未評分」的 evidence
-   檔必須回 0；`scores.json` 的 `meta` 欄位維持必填不變。此變更同樣屬放寬、jason-lab 未受影響。
-
-任何放寬都是 v2 的事，需同步 `jason-lab`。
+5. **`meta.judge.calibrated`**：語意是「已通過 C5 校準」；種子與 C5 通過前必須如實 `false`。
+6. **`evidence.author` 允許 `null`**（R3 發現）：站方顯示「未知作者」。
+7. **未評分狀態合法**：`votes` 與 `judge` 可為 `null`；`arena validate` 對未評分 evidence
+   回 0。
+8. **維度語意分工**：`overall`（positive/negative/neutral）＝總評；五個面向維度
+   （positive/negative/not-discussed）＝逐面向投票。`neutral` 不適用於面向維度，
+   `not-discussed` 不適用於 overall。
+9. **`dimensions` 的鍵必須是 `meta.dimensions` 宣告過的 id**（validate 要交叉檢查）；
+   `tokenEfficiency`（囉嗦與否／上下文利用率）與 `tokenUsage`（完成任務燒多少 token、
+   額度消耗）兩欄 v1 先分開；若 C5 發現社群訊號分不開，合併為一欄屬 schema 變更。
+10. **總分公式**（C4）：每維度 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)` 再以 Wilson
+    下界依 `P+N` 樣本數向 50 收縮；`P+N=0` → null。總分＝`Σ w_i·dimScore_i / Σ w_i`
+    （只計非 null 維度）。權重讀 `meta.weights`（預設上值；調整＝改 config 重跑 build）。
+    分數全部由公式算出，模型不直接打分。
 
 ## 任務拆分
 
@@ -108,18 +145,26 @@
 - 去重：以正規化後的內容 hash 為鍵
 - **驗收**：同一則爆紅轉貼只留一筆；每筆都能用 url 連回原文
 
-### C3 — score
-- 慢層：rubric 定義（品質／速度／價格）
-- 快層：JEV 逐則分類 + 校準機率
-- **驗收**：對固定輸入集重跑，分數變動在容許範圍內（可重現）
+### C3 — score ✅（overall 總評完成；多維度升級見 A3）
+- 快層：JEV 逐則分類 + 校準機率（laya、`answer_confidence`，見 `docs/research/jev-scoring.md`）
+- **驗收**：對固定輸入集重跑，分數變動在容許範圍內（可重現）——已達（2308e40）
 
-### C4 — build
-- 由 evidence 聚合出 `scores.json`；**分數由公式計算**，不呼叫模型直接打分
-- **驗收**：`arena build` 產出的檔案通過 `arena validate`；抽樣 20 筆可從分數連回原始貼文
+### A3 — schema v1.1 多維度改造（2026-09-29 新增，C4/C5 的前置）
+- `schema.py`：evidence 改 `votes` map、scores 改開放 `dimensions`＋`meta.dimensions/weights/sourcesCovered`
+- `score.py`：同一次 laya pass 問 6 題（overall＋5 面向），回填 votes
+- 種子資料與既有 evidence 依新 shape 重建／重評
+- **驗收**：`validate` 過新種子；真跑 score 對 `2026-09-29.jsonl` 全部回填 votes 且校準機率欄位正確；重現性與冪等維持
+
+### C4 — build（依 v1.1）
+- 由 evidence 的 `votes` 聚合出 `scores.json`；**分數由公式計算**（裁定第 10 條），不呼叫模型直接打分；
+  定价/`priceUsdPerMTok` 自 `data/models.json` 附掛
+- **驗收**：`arena build` 產出的檔案通過 `arena validate`；抽樣 20 筆可從分數連回原始貼文；
+  全無某面向討論時該維度為 null 且總分正確重歸一
 
 ### C5 — 校準驗證（上線門檻）
-- 人工標註 100~200 則，計算準確率與校準曲線
-- **驗收**：準確率與校準度達標並記錄在 `docs/research/jev-scoring.md`
+- 人工標註 100~200 則（**每則標 6 個面向**：overall＋5 維度），計算準確率與校準曲線
+- 對 `overall` 與各面向維度分別量 ECE；`not-discussed` 判定單獨切片
+- **驗收**：準確率與校準度達標並記錄在 `docs/research/jev-scoring.md`（標註指南 `docs/annotation-guide.md` 先凍結）
 
 ## 技術選型
 
@@ -138,7 +183,7 @@
 - [x] JEV 具體選用（R1 定案 2026-09-29）：**`convaiinnovations/laya` 英文 checkpoint**，
       pin revision `55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851`，`choice` 題型三類態度，
       校準機率用 `answer_confidence`。詳見 `docs/research/jev-scoring.md`。
-- [ ] 三個維度的權重與公式定案（C3/C4 階段，慢層 rubric 後定）
+- [x] 維度與公式定案（v1.1 定稿：5 面向＋總評、逐面向投票聚合，見實作裁定 8~10）
 
 ## 收集策略（R3 定案，2026-09-29；C2/C5 依此實作）
 
