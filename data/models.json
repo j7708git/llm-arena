@@ -1,0 +1,98 @@
+{
+  "meta": {
+    "fetchedAt": "2026-09-29T00:27:52Z",
+    "modelsYamlHash": "sha256:179df0668fab7e68d4578d874c066a7694cb8c4dbcce4cab0ded93d88088bc21",
+    "openrouterStatus": "ok",
+    "source": "openrouter"
+  },
+  "models": [
+    {
+      "contextLength": 200000,
+      "id": "anthropic/claude-sonnet-4",
+      "missing": [],
+      "name": "Claude Sonnet 4",
+      "priceUsdPerMTok": {
+        "in": 3.0,
+        "out": 15.0
+      },
+      "provider": "Anthropic"
+    },
+    {
+      "contextLength": 1000000,
+      "id": "anthropic/claude-sonnet-5.5",
+      "missing": [],
+      "name": "Claude Sonnet 5.5",
+      "priceUsdPerMTok": {
+        "in": 2.0,
+        "out": 10.0
+      },
+      "provider": "Anthropic"
+    },
+    {
+      "contextLength": null,
+      "id": "deepseek/deepseek-v3.1",
+      "missing": [
+        "contextLength",
+        "priceUsdPerMTok"
+      ],
+      "name": "DeepSeek V3.1",
+      "priceUsdPerMTok": null,
+      "provider": "DeepSeek"
+    },
+    {
+      "contextLength": 1048576,
+      "id": "google/gemini-2.5-pro",
+      "missing": [],
+      "name": "Gemini 2.5 Pro",
+      "priceUsdPerMTok": {
+        "in": 1.25,
+        "out": 10.0
+      },
+      "provider": "Google"
+    },
+    {
+      "contextLength": 400000,
+      "id": "openai/gpt-5",
+      "missing": [],
+      "name": "GPT-5",
+      "priceUsdPerMTok": {
+        "in": 1.25,
+        "out": 10.0
+      },
+      "provider": "OpenAI"
+    },
+    {
+      "contextLength": 1050000,
+      "id": "openai/gpt-6-sol",
+      "missing": [],
+      "name": "GPT-6 Sol",
+      "priceUsdPerMTok": {
+        "in": 2.0,
+        "out": 10.0
+      },
+      "provider": "OpenAI"
+    },
+    {
+      "contextLength": 500000,
+      "id": "x-ai/grok-4.7",
+      "missing": [],
+      "name": "Grok 4.7",
+      "priceUsdPerMTok": {
+        "in": 2.0,
+        "out": 6.0
+      },
+      "provider": "xAI"
+    },
+    {
+      "contextLength": 1000000,
+      "id": "z-ai/glm-5.3-prime",
+      "missing": [],
+      "name": "GLM 5.3 Prime",
+      "priceUsdPerMTok": {
+        "in": 2.8,
+        "out": 8.8
+      },
+      "provider": "Z.AI"
+    }
+  ]
+}

@@ -65,6 +65,7 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 
 # 3. 執行 CLI
 .venv/bin/arena --help
+.venv/bin/arena fetch-models  # 合併人工清單與 OpenRouter，寫入 data/models.json
 .venv/bin/arena build         # 尚未實作的子命令會以非 0 結束碼回報
 
 # 4. 跑測試
@@ -74,6 +75,40 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 也可以不啟用虛擬環境，直接用 `python -m arena` 執行（需先安裝專案）。
 
 尚未實作的子命令會印出「尚未實作」訊息並以結束碼 `3` 收場，不會靜默成功。
+
+### fetch-models
+
+- 人工清單在 `config/models.yaml`（**主**，決定要追哪些模型）；定價與 context
+  length 由 `https://openrouter.ai/api/v1/models`（免 key、**只用 API 不爬 HTML**）
+  附掛到人工清單上。輸出 `data/models.json` 供 `build` 使用。
+- OpenRouter 掛掉（斷網／非 200／逾時）時**不影響人工清單**：缺的欄位放 `null`
+  並列在該筆的 `missing`，`meta.openrouterStatus` 記為 `unavailable`，退出碼仍為
+  `0`（只在 stderr 說明）。
+- `arena fetch-models` 的預設路徑是 `config/models.yaml` → `data/models.json`；
+  程式呼叫 `arena.fetch_models.run(args)` 時可用 `args.config`／`args.output`
+  覆寫（CLI 目前固定走預設值）。
+
+**重跑一致性**（除 `meta.fetchedAt` 外逐字可重現）：
+
+```bash
+.venv/bin/arena fetch-models && cp data/models.json /tmp/models-a.json
+.venv/bin/arena fetch-models
+diff <(jq 'del(.meta.fetchedAt)' /tmp/models-a.json) \
+     <(jq 'del(.meta.fetchedAt)' data/models.json)   # 無輸出＝一致
+```
+
+沒有 `jq` 時等價檢查：
+
+```bash
+.venv/bin/python - <<'PY'
+import json
+a = json.load(open('/tmp/models-a.json'))
+b = json.load(open('data/models.json'))
+a['meta'].pop('fetchedAt')
+b['meta'].pop('fetchedAt')
+print('一致' if a == b else '不一致')
+PY
+```
 
 ## 注意事項
 
