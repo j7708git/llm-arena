@@ -4,21 +4,27 @@
 
 1. 讀 ``config/models.yaml`` 的人工模型清單，對每個模型的 ``name`` 當查詢字串，
    呼叫 vendor 的 ``last30days`` 引擎（``--emit=json --json-profile=agent``，契約
-   v1.3，預設 30 天窗口、``--quick``）。
-2. **過濾**：只留 ``reddit``／``hackernews``（來源白名單，擋掉 jobs 等雜訊）；
-   排除非英文貼文（laya 是英文 checkpoint，見 R1 筆記坑 7）；排除同時提及兩個以上
-   模型名的貼文（歸屬不明，見 R1 筆記結尾警告）；缺 url／缺時間的丟棄。
-3. **轉換**：``source``（hackernews→hn）、``url``、``postedAt``（ISO）、
+   v1.3，預設 30 天窗口），並以 ``--search`` 明確要求 ``reddit,hackernews,x``。
+   預設用 default depth（不用 ``--quick``：quick profile 每個 subquery 只留 2 個來源，
+   x 會被優先序較高的 reddit／hn 擠掉）。
+2. **過濾**：只留 ``reddit``／``hackernews``／``x``（來源白名單，擋掉 jobs／github
+   等雜訊）；排除非英文貼文（laya 是英文 checkpoint，見 R1 筆記坑 7）；排除同時提及
+   兩個以上模型名的貼文（歸屬不明，見 R1 筆記結尾警告）；缺 url／缺時間的丟棄。
+3. **轉換**：``source``（hackernews→hn，x→x）、``url``、``postedAt``（ISO）、
    ``text``（title＋summary，截斷至 :data:`MAX_TEXT_CHARS` 字元，理由見證 R1 筆記
    坑 6 的 ~320 token state 預算）、``hash``（正規化文字的 sha256）、``modelId``、
-   ``author``；``votes``／``judge`` 一律 ``null``，交給 C3 回填。
+   ``author``（X 的作者帳號直接取自永久連結路徑，見 :func:`x_author_from_url`）；
+   ``votes``／``judge`` 一律 ``null``，交給 C3 回填。
 4. **補缺**：``author`` 與 HN 討論頁連結以公開 API 回填（見 :mod:`arena.enrich`）；
    失敗留 ``null``，不阻擋。
 5. **去重**：與 ``data/evidence/*.jsonl`` 既有的 hash（跨檔）及同批內部都比對，
-   重複只留一筆。
+   重複只留一筆（跨來源轉貼亦然，例：Reddit 貼文與 X 轉推同文只留先到的一筆）。
 6. **落地**：``data/evidence/YYYY-MM-DD.jsonl``（UTC 日期）；同日重跑採
    「讀入→合併去重→原子寫回」，冪等且不留半檔（沿用 ``arena.score`` 的
    mkstemp + ``os.replace`` 手法）。
+7. **憑證未設定時優雅降級**：``source_status`` 標為 ``skipped-unconfigured``
+   （例：沒放 X cookie）的來源視為「預期跳過」，不重試、不算失敗、不影響退出碼，
+   只印明確警告；reddit／hn 照常收集（讓 CI 等無憑證環境能跑）。
 
 引擎需要 **Python >= 3.12**，且必須是 vendor 進本 repo 的腳本
 （``vendor/last30days/last30days.py``）。執行時優先使用 ``<repo>/.venv/bin/python``，
@@ -59,7 +65,11 @@ DEFAULT_ENGINE_SCRIPT = Path("vendor/last30days/last30days.py")
 ENGINE_MIN_PYTHON = (3, 12)
 
 # 來源白名單：last30days 的 source → evidence schema 的 source 值。
-SOURCE_MAP = {"reddit": "reddit", "hackernews": "hn"}
+SOURCE_MAP = {"reddit": "reddit", "hackernews": "hn", "x": "x"}
+
+# 每次查詢明確向引擎要求的來源（順序固定）。不靠引擎預設來源集，確保 X 一定會被
+# 要求（有 cookie 才有資料，沒有則回 skipped-unconfigured 優雅跳過）。
+ENGINE_SOURCES = ("reddit", "hackernews", "x")
 
 # 預設時間窗口（天）與抓取模式。
 DEFAULT_DAYS = 30
@@ -76,6 +86,9 @@ LATIN_RATIO_MIN = 0.6
 HEALTHY_STATUSES = {"ok", "no-results"}
 # 可以退避重試的失敗狀態（rate-limited 最常見）。
 RETRYABLE_STATUSES = {"rate-limited", "timeout", "unreachable", "error", "partial"}
+# 憑證未設定時引擎對該來源回報的狀態：屬「預期跳過」，不是失敗——
+# 不重試、不影響退出碼，只印明確警告（讓沒放 cookie 的環境照常收 reddit／hn）。
+EXPECTED_SKIP_STATUSES = {"skipped-unconfigured"}
 
 # 引擎呼叫與退避預設值。
 DEFAULT_TIMEOUT_SECONDS = 300.0
@@ -83,12 +96,17 @@ DEFAULT_RETRIES = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 30.0
 DEFAULT_SLEEP_BETWEEN_MODELS_SECONDS = 30.0
 
-# 只補缺「有機會補到」的來源。
+# 只補缺「有機會補到」的來源。X 不需要補缺：作者直接由永久連結路徑取得
+# （見 x_author_from_url），url 本身已是永久連結。
 _ENRICHABLE_SOURCES = {"reddit", "hn"}
 
 _DIGITS_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _JSON_START_RE = re.compile(r"\{", re.S)
+# X／Twitter 永久連結 ``https://x.com/<handle>/status/<id>``：作者帳號就在路徑中。
+_X_AUTHOR_RE = re.compile(
+    r"^https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([A-Za-z0-9_]{1,15})/status/\d+"
+)
 
 
 class CollectError(RuntimeError):
@@ -197,8 +215,17 @@ class SubprocessRunner:
             "--json-profile=agent",
             "--days",
             str(days),
+            # 明確指定來源：否則引擎的預設來源集依環境而異，且 X 需要憑證才啟用。
+            # 一律要求 reddit／hackernews／x；未放 X cookie 時引擎回
+            # `skipped-unconfigured` 並照常跑其餘來源（見 unconfigured_sources）。
+            "--search",
+            ",".join(ENGINE_SOURCES),
         ]
-        command.append("--deep" if deep else "--quick")
+        # 預設用 default depth（不可用 --quick）：quick profile 會把每個 subquery
+        # 的來源數上限壓到 2（planner.SOURCE_LIMITS），優先序 hackernews／reddit
+        # 會把 x 擠掉，導致 x 永遠抓不到。--deep 仍走引擎的 --deep。
+        if deep:
+            command.append("--deep")
         try:
             proc = subprocess.run(
                 command,
@@ -290,8 +317,9 @@ def _mention_pattern(name: str) -> re.Pattern[str]:
 def compose_text(title: str, summary: str) -> str:
     """把 title 與 summary 合成一段文字（各自 strip、以換行分隔）。
 
-    HN 的 summary 常與 title 完全相同（或更長且已含 title），此時只留一份，
-    避免 text 重複而虛耗 laya 的 ~320 token state 預算。
+    HN 的 summary 常與 title 完全相同，X 的 title 則是 summary 截斷前 140 字元
+    （結尾常落在詞中間，下一個字元不是空白）；兩種情況 summary 都已含 title，
+    只留 summary，避免 text 重複而虛耗 laya 的 ~320 token state 預算。
     """
     title = title.strip()
     summary = summary.strip()
@@ -301,12 +329,20 @@ def compose_text(title: str, summary: str) -> str:
         return summary
     normalized_title = normalize_text(title)
     normalized_summary = normalize_text(summary)
-    if (
-        normalized_summary == normalized_title
-        or normalized_summary.startswith(normalized_title + " ")
-    ):
+    if normalized_summary.startswith(normalized_title):
         return summary
     return f"{title}\n{summary}"
+
+
+def x_author_from_url(url: str) -> str | None:
+    """從 X 永久連結取出作者帳號（``@handle``）；格式不符回 ``None``。
+
+    last30days 的 agent JSON（v1.3）沒有 ``author`` 欄位，但 X 結果的 ``url``
+    必然是 ``https://x.com/<handle>/status/<id>``，作者可由路徑零網路取得，
+    因此 X 不需要 :mod:`arena.enrich` 補缺。
+    """
+    match = _X_AUTHOR_RE.match(url.strip())
+    return f"@{match.group(1)}" if match else None
 
 
 def to_iso(value: Any) -> str | None:
@@ -397,12 +433,14 @@ def build_records(
             continue
 
         # 截斷到 MAX_TEXT_CHARS（R1 筆記坑 6 的 ~320 token 預算）。
+        # X 的作者帳號取自永久連結路徑（agent JSON 無 author 欄）。
+        author = x_author_from_url(url) if raw_source == "x" else None
         record = {
             "hash": content_hash(text[:MAX_TEXT_CHARS]),
             "modelId": model["id"],
             "source": SOURCE_MAP[raw_source],
             "url": url,
-            "author": None,
+            "author": author,
             "postedAt": posted_at,
             "text": text[:MAX_TEXT_CHARS],
             # v1.1：未評分時 votes／judge 為 null，交由 C3 `arena score` 回填。
@@ -502,13 +540,33 @@ def merge_and_write(path: Path, new_records: Sequence[dict[str, Any]]) -> int:
 
 
 def unhealthy_sources(status: dict[str, Any]) -> list[tuple[str, str]]:
-    """回傳白名單來源中狀態不健康者（``(source, status)``）。"""
+    """回傳白名單來源中狀態不健康者（``(source, status)``）。
+
+    ``skipped-unconfigured`` 屬「預期跳過」（見 :func:`unconfigured_sources`），
+    不算不健康、不重試，避免沒放憑證時被誤判成失敗。
+    """
     unhealthy: list[tuple[str, str]] = []
     for source in SOURCE_MAP:
         value = status.get(source)
-        if isinstance(value, str) and value not in HEALTHY_STATUSES:
-            unhealthy.append((source, value))
+        if not isinstance(value, str):
+            continue
+        if value in HEALTHY_STATUSES or value in EXPECTED_SKIP_STATUSES:
+            continue
+        unhealthy.append((source, value))
     return unhealthy
+
+
+def unconfigured_sources(status: dict[str, Any]) -> list[str]:
+    """回傳因未設定憑證而被引擎跳過的來源（例：X 沒放 cookie）。
+
+    這不是失敗：對應的來源本輪沒有資料，其餘來源照常收集、退出碼不受影響，
+    只需明確警告使用者。
+    """
+    return [
+        source
+        for source in SOURCE_MAP
+        if status.get(source) in EXPECTED_SKIP_STATUSES
+    ]
 
 
 @dataclass
@@ -662,6 +720,14 @@ def run(
             print(f"  [警告] {model['name']}：{message}", file=sys.stderr)
             continue
 
+        for source in unconfigured_sources(outcome.final_status):
+            print(
+                f"  [警告] 來源 {source} 未設定憑證"
+                f"（{outcome.final_status[source]}），本輪跳過 {source}；"
+                "其餘來源照常收集。",
+                file=sys.stderr,
+            )
+
         for source, value in unhealthy_sources(outcome.final_status):
             note = f"{model['name']} {source}={value}（重試 {outcome.attempts} 次後）"
             if value == "rate-limited":
@@ -782,7 +848,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--deep",
         action="store_true",
-        help="用引擎的 --deep 高召回模式（預設 --quick）",
+        help="用引擎的 --deep 高召回模式（預設為引擎的 default depth）",
     )
     parser.add_argument(
         "--sleep",
@@ -811,8 +877,10 @@ __all__ = [
     "DEFAULT_ENGINE_SCRIPT",
     "DEFAULT_MODELS_CONFIG",
     "DEFAULT_OUTPUT_DIR",
+    "ENGINE_SOURCES",
     "EXIT_ERROR",
     "EXIT_OK",
+    "EXPECTED_SKIP_STATUSES",
     "HttpEnricher",
     "LATIN_RATIO_MIN",
     "MAX_TEXT_CHARS",
@@ -833,5 +901,7 @@ __all__ = [
     "resolve_engine_python",
     "run",
     "to_iso",
+    "unconfigured_sources",
     "unhealthy_sources",
+    "x_author_from_url",
 ]
