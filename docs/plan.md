@@ -83,6 +83,9 @@
 6. **`evidence.author` 允許 `null`**（R3 發現，2026-09-29）：`last30days` 的 agent JSON 無
    `author` 欄、raw profile 也只有部分有。此欄改為 `str | None` 屬於放寬，
    在 `jason-lab` 尚未開工前完成，不算破壞契約；站方顯示時以「未知作者」處理。
+7. **`evidence.label`／`prob`／`judge` 允許 `null`**（PM 裁定 2026-09-29）：C2 落地的是
+   **未評分**貼文，三欄由 C3 回填。`arena validate` 對「結構合法但尚未評分」的 evidence
+   檔必須回 0；`scores.json` 的 `meta` 欄位維持必填不變。此變更同樣屬放寬、jason-lab 未受影響。
 
 任何放寬都是 v2 的事，需同步 `jason-lab`。
 
@@ -132,7 +135,9 @@
 
 - [x] 社群來源清單（R3 定案，見下「收集策略」）
 - [ ] 排程頻率（每日或每週）
-- [x] JEV 具體選用：待 R1 結論（`docs/research/jev-scoring.md`）
+- [x] JEV 具體選用（R1 定案 2026-09-29）：**`convaiinnovations/laya` 英文 checkpoint**，
+      pin revision `55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851`，`choice` 題型三類態度，
+      校準機率用 `answer_confidence`。詳見 `docs/research/jev-scoring.md`。
 - [ ] 三個維度的權重與公式定案（C3/C4 階段，慢層 rubric 後定）
 
 ## 收集策略（R3 定案，2026-09-29；C2/C5 依此實作）
