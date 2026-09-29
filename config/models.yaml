@@ -1,0 +1,37 @@
+# 人工維護的模型清單（任務 C1）。這是「主」名單：OpenRouter 只負責附掛
+# 定價與 context length，不會決定要追蹤哪些模型（見 docs/plan.md 任務 C1）。
+#
+# 每筆欄位：
+#   id       OpenRouter 模型 id（`<author>/<model-slug>` 格式，必填）
+#   name     網站顯示短名（必填，不隨 OpenRouter 的 "Provider: ..." 標題變動）
+#   provider 廠牌顯示名（必填，供網站篩選）
+#   alias    選用；OpenRouter 查不到 id 時的備援匹配鍵（例如舊 id／canonical slug）
+#
+# 初始名單＝data/scores.json 種子的 4 個模型，加上 2026-09 近期熱門模型。
+models:
+  - id: anthropic/claude-sonnet-4
+    name: Claude Sonnet 4
+    provider: Anthropic
+  - id: anthropic/claude-sonnet-5.5
+    name: Claude Sonnet 5.5
+    provider: Anthropic
+  - id: openai/gpt-5
+    name: GPT-5
+    provider: OpenAI
+  - id: openai/gpt-6-sol
+    name: GPT-6 Sol
+    provider: OpenAI
+  - id: google/gemini-2.5-pro
+    name: Gemini 2.5 Pro
+    provider: Google
+  # deepseek/deepseek-v3.1 已從 OpenRouter 現行清單下架（2026-09 實查），
+  # 保留在人工名單中示範「API 沒有、仍要輸出並標記缺欄」的情境。
+  - id: deepseek/deepseek-v3.1
+    name: DeepSeek V3.1
+    provider: DeepSeek
+  - id: x-ai/grok-4.7
+    name: Grok 4.7
+    provider: xAI
+  - id: z-ai/glm-5.3-prime
+    name: GLM 5.3 Prime
+    provider: Z.AI
