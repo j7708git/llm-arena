@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from arena.cli import EXIT_NOT_IMPLEMENTED, main
+from arena.cli import main
 from arena.schema import EvidenceRecord, ScoresDocument
 from arena.validate import validate_path
 
@@ -241,6 +241,9 @@ def test_seed_model_ids_are_unique() -> None:
     assert len(ids) == len(set(ids))
 
 
-def test_validate_keeps_unimplemented_exit_code() -> None:
-    """確認沒有動到其他子命令的結束碼合約。"""
-    assert main(["build"]) == EXIT_NOT_IMPLEMENTED
+def test_other_pipeline_commands_not_replying_validate_exit_codes() -> None:
+    """確認 validate 未誤動其他管線命令（build 尚未實作，應回 3）。
+
+    C4 實作 build 後請改寫或刪除本測試（屆時 test_validate.py 歸 C4 維護）。
+    """
+    assert main(["build"]) == 3
