@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 from pathlib import Path
 from typing import Callable, Sequence
@@ -109,6 +110,12 @@ def build_parser() -> argparse.ArgumentParser:
                 nargs="*",
                 help="要檢查的檔案（預設 data/scores.json）",
             )
+        # 通用地掛載各命令模組的參數：實作模組只要提供
+        # ``add_arguments(parser)``，CLI 就會把選項接上（C2/C4 不需改本檔）。
+        module = importlib.import_module(f"arena.{name.replace('-', '_')}")
+        add_arguments = getattr(module, "add_arguments", None)
+        if callable(add_arguments):
+            add_arguments(sub)
         sub.set_defaults(func=handler)
 
     return parser
