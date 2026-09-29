@@ -1,0 +1,58 @@
+{
+  "seed": 20260929,
+  "bandQuestion": "overall",
+  "lowConfidenceThreshold": 0.7,
+  "lowConfidenceWeight": 2.5,
+  "target": 150,
+  "cap": 200,
+  "minPerSource": 25,
+  "sampled": 150,
+  "bySource": {
+    "hn": 52,
+    "reddit": 54,
+    "x": 44
+  },
+  "strata": {
+    "hn|low": 46,
+    "hn|high": 6,
+    "reddit|low": 45,
+    "reddit|high": 9,
+    "x|low": 32,
+    "x|high": 12
+  },
+  "bandByQuestion": {
+    "overall": {
+      "low": 123,
+      "high": 27
+    },
+    "quality": {
+      "low": 120,
+      "high": 30
+    },
+    "speed": {
+      "low": 120,
+      "high": 30
+    },
+    "tokenEfficiency": {
+      "low": 136,
+      "high": 14
+    },
+    "tokenUsage": {
+      "low": 126,
+      "high": 24
+    },
+    "priceValue": {
+      "low": 121,
+      "high": 29
+    }
+  },
+  "pool": {
+    "files": [
+      "data/evidence/2026-09-29.jsonl"
+    ],
+    "candidates": 214,
+    "excludedDuplicates": 0,
+    "excludedFragments": 2,
+    "excludedUnscored": 0
+  }
+}

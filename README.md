@@ -38,10 +38,10 @@
 ## 目錄結構
 
 ```
-src/               fetch-models / collect / score / build / validate
-data/              scores.json、evidence/*.jsonl
+src/               fetch-models / collect / score / build / validate（＋calibrate 標註工具）
+data/              scores.json、evidence/*.jsonl、calibration/（C5 標註工作檔）
 tests/
-docs/              plan.md、research/
+docs/              plan.md、annotation-guide.md、research/
 ```
 
 ## CLI（規劃中）
@@ -283,6 +283,41 @@ for doc in (a, b):
 print('一致' if a == b else '不一致')
 PY
 ```
+
+## C5 校準流程（人工標註）
+
+C5 需要一份人工標註的 ground truth（目標 150 則、每則標六個面向），才能量準確率與 ECE。
+抽樣工作檔已隨 repo 附上：`data/calibration/annotation-worksheet.jsonl`（150 筆）。
+
+```bash
+# 1. 由 evidence 重新抽樣（已附檔，想重抽再跑；固定 seed，同池重跑位元組相同）
+.venv/bin/python -m arena.calibrate sample
+#   分層＝來源（reddit/hn/x）× overall 信心帶；answer_confidence < 0.70 加權 2.5 倍；
+#   目標 n=150（每來源≥25）；中繼資料寫進 annotation-worksheet.jsonl.meta.json
+
+# 2. 逐筆標註：編輯 annotation-worksheet.jsonl，填六個 gold_*（+ notes/annotator/annotatedAt）
+#    規則見 docs/annotation-guide.md。工作檔刻意沒有模型預測欄位（防 anchoring），
+#    要對照時一律用 hash join 回 evidence。
+
+# 3. 看標註進度（完成／部分／未標，以及各面向非空數）
+.venv/bin/python -m arena.calibrate stats
+
+# 4. 標完後轉成 laya-evals 可吃的 gold，直接跑校準
+.venv/bin/python -m arena.calibrate make-evals
+LAYA_DEVICE=cpu .venv/bin/laya-evals run data/calibration/gold.jsonl \
+  --model english --device cpu --batch-size 8 --min-accuracy 0.80 --max-ece 0.10 \
+  --slice tag --markdown docs/calibration-report.md --json docs/calibration-report.json
+```
+
+**怎麼編輯工作檔？** 建議直接改 JSONL：每行一筆，六個 `gold_*` 填正式標籤
+（`overall` 用 `positive`/`negative`/`neutral`；五面向用 `positive`/`negative`/`not-discussed`），
+`notes` 可寫 `mixed`／`off_target`／`truncated` 等標記。標籤與欄位全部照
+`docs/annotation-guide.md`，不要新增欄位。我們**沒有**內建互動式 TUI（逐筆按鍵標註）：
+理由是人工標註是一次性、150 筆，編輯檔案＋`stats` 已足夠，且可版控、可 review；
+若日後標註量變大再考慮補 `show` 子命令。
+
+> 單人標註後，第二人重標 30 筆算 Cohen's κ（**κ ≥ 0.70** 才過關）；κ 太低要先修指南再重標，
+> 詳見 `docs/annotation-guide.md` 第 4 節。
 
 ## 注意事項
 
