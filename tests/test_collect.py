@@ -185,8 +185,7 @@ def test_cross_file_duplicate_is_skipped(tmp_path: Path) -> None:
         "author": None,
         "postedAt": "2026-09-01T00:00:00Z",
         "text": "GPT-5 is a joy to use\nI love GPT-5. submitted by /u/alice",
-        "label": None,
-        "prob": None,
+        "votes": None,
         "judge": None,
     }
     (out_dir / "2026-09-01.jsonl").write_text(
@@ -360,8 +359,7 @@ def test_atomic_write_leaves_no_partial_file_on_crash(
             "author": None,
             "postedAt": "2026-09-01T00:00:00Z",
             "text": "old",
-            "label": None,
-            "prob": None,
+            "votes": None,
             "judge": None,
         },
         ensure_ascii=False,
@@ -381,8 +379,7 @@ def test_atomic_write_leaves_no_partial_file_on_crash(
         "author": None,
         "postedAt": "2026-09-22T00:00:00Z",
         "text": "new",
-        "label": None,
-        "prob": None,
+        "votes": None,
         "judge": None,
     }
     with pytest.raises(OSError):

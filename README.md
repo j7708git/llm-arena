@@ -20,9 +20,11 @@
 1. **模型清單**：以人工維護清單為主，附掛 OpenRouter 公開 API `https://openrouter.ai/api/v1/models` 的定價與 context length（用 API，不爬 HTML）。
 2. **社群收集**：排程 agent 使用 `last30days` 技能抓近 30 天社群討論（Reddit／X／HN／論壇）。
 3. **評分（兩層設計）**：
-   - 慢層（做一次）：強推理模型 + rubric 定義「品質／速度／價格 CP 值」的判斷準則與邊界案例。
-   - 快層（做很多次）：JEV 家族（自架 `laya` 或 `AgentJev-0.6B`）對逐則貼文分類態度並輸出**校準機率**（~50ms／則、不解碼 output token）。
-4. **分數是算出來的**：以「正面提及比例 × 樣本數加權」計算，公式可驗證。
+   - 慢層（做一次）：強推理模型 + rubric 定義「智能／速度／Token 效率／Token 用量／CP 值」五個面向的判斷準則與邊界案例。
+   - 快層（做很多次）：JEV 家族（自架 `laya`）對逐則貼文投票並輸出**校準機率**（一次 pass 問六題、不解碼 output token）。
+4. **分數是算出來的**：每個面向 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)`，再依樣本數
+   向 50 收縮；總分＝各面向加權平均（權重見 `meta.weights`，null 維度剔除後重歸一）。
+   公式可驗證，模型不直接打分。
 
 > 這是**社群聲量代理指標，不是 benchmark**。所有呈現都必須標明這點。
 
@@ -92,13 +94,41 @@ uv pip install --python .venv/bin/python -e ".[score,dev]" --torch-backend=cpu
 # 指定單一檔（score 子命令的 CLI 參數待 cli.py 解凍；目前先用環境變數）
 ARENA_EVIDENCE_FILES=data/evidence/2026-09-29.jsonl .venv/bin/arena score
 
-# 重評所有行，包含已有 label 的行（預設會跳過）
+# 重評所有行，包含已有 votes 的行（預設會跳過）
 ARENA_SCORE_FORCE=1 .venv/bin/arena score
 ```
 
-評分結果會把 `label`（positive／negative／neutral）、`prob`（＝laya 的 `answer_confidence`，
-即校準機率）、`judge`（`laya@55cf4c4`）回填進 evidence。輸出採**原子寫入**（先寫同目錄
-暫存檔再 rename），中途失敗不會留下半截 jsonl；已有 `label` 的行會跳過，因此可重複執行。
+評分結果會把 `votes`（六題投票）、`judge`（`laya@55cf4c4`）回填進 evidence。
+輸出採**原子寫入**（先寫同目錄暫存檔再 rename），中途失敗不會留下半截 jsonl；
+已有 `votes` 的行會跳過，因此可重複執行。
+
+### 資料契約（schema v1.1）
+
+evidence 的每則貼文以 `votes` 記錄**一次 pass 的六題投票**：`overall`（總評）＋五個面向
+`quality`／`speed`／`tokenEfficiency`／`tokenUsage`／`priceValue`，每題 `{label, prob}`，
+`prob` 一律是 laya 的 `answer_confidence`（校準機率）。未評分時 `votes`／`judge` 為 `null`，
+結構仍合法。
+
+rubric（題目文字見 `src/arena/score.py` 的 `QUESTION`；`overall` 用 positive／negative／
+neutral，五個面向用 positive／negative／`not-discussed`）：
+
+| 題 id | 問的是 | 五面向的第三個標籤 |
+| --- | --- | --- |
+| `overall` | 作者對該模型的**總評**態度 | （用 neutral） |
+| `quality` | 模型的**能力與輸出品質**（正確性、聰明度、可靠性） | `not-discussed` |
+| `speed` | 模型的**回應速度／延遲／吞吐** | `not-discussed` |
+| `tokenEfficiency` | 模型的**囉嗦度與上下文／token 利用效率** | `not-discussed` |
+| `tokenUsage` | 完成任務**所需的 token 量／額度消耗** | `not-discussed` |
+| `priceValue` | 模型的**價格與性價比**（定價、訂閱、免費額度 CP 值） | `not-discussed` |
+
+`not-discussed`＝「貼文未談該面向，或談了但沒有評價立場」，**不同於**「談了但中立」
+（`neutral` 只屬於 `overall`）。
+
+`data/scores.json`（v1.1）：`meta.dimensions` 宣告站方表格欄位（id／label），
+`models[].dimensions` 是開放 map，**鍵必須恰好等於 `meta.dimensions` 的 id 集合**
+（`validate` 會交叉檢查）。某一面向完全沒有正負表態時，該維度是 **`null`**＝
+**「資料不足」**，站方必須顯示為資料不足，**不得顯示成 50**。`meta.weights` 是總分權重，
+`priceUsdPerMTok` 在 model 層級（查無定價為 `null`），另有 `dimensionSamples` 記錄各面向樣本數。
 
 也可以不啟用虛擬環境，直接用 `python -m arena` 執行（需先安裝專案）。
 
@@ -171,7 +201,7 @@ PY
   （同批與跨檔都比對），重複只留一筆。
 - **補缺**：`author` 用 Reddit 公開 JSON／貼文摘要的 `/u/` 回填，HN 討論頁連結與
   作者用 Algolia API 以標題查回（皆免 key）；補不到就留 `null`，不阻擋流程。
-  `label`／`prob`／`judge` 由 C3 `arena score` 回填。
+  `votes`／`judge` 由 C3 `arena score` 回填。
 - **`source_status`**：只有 `ok`／`no-results` 視為正常；`rate-limited` 等失敗狀態
   會退避重試（`--retries`／`--retry-backoff`），仍失敗則明確警告、不當成「沒討論」。
 - **冪等**：同一天重跑採「讀入→合併去重→原子寫回」（先寫同目錄暫存檔再

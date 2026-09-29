@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from arena.schema import EvidenceRecord, ScoresDocument
+from arena.schema import EvidenceRecord, ScoresDocument, dimension_key_errors
 
 EXIT_OK = 0
 EXIT_INVALID = 1
@@ -74,12 +74,16 @@ def _errors_from_validation(exc: ValidationError) -> list[str]:
 
 
 def validate_scores_data(data: object) -> list[str]:
-    """驗證已解析的 scores 物件；回傳錯誤訊息清單（合法則為空）。"""
+    """驗證已解析的 scores 物件；回傳錯誤訊息清單（合法則為空）。
+
+    pydantic 驗證過後再跑一道跨欄位交叉檢查：``models[].dimensions`` 的鍵必須恰好
+    等於 ``meta.dimensions`` 宣告的 id 集合（實作裁定第 9 條）。
+    """
     try:
-        ScoresDocument.model_validate(data)
+        document = ScoresDocument.model_validate(data)
     except ValidationError as exc:
         return _errors_from_validation(exc)
-    return []
+    return dimension_key_errors(document)
 
 
 def validate_evidence_lines(text: str) -> list[str]:

@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 
 from arena.cli import main
-from arena.schema import EvidenceRecord, ScoresDocument
+from arena.schema import (
+    FACET_DIMENSION_IDS,
+    VOTE_IDS,
+    EvidenceRecord,
+    ScoresDocument,
+)
 from arena.validate import validate_path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +38,14 @@ def write_broken_scores(tmp_path: Path, mutate) -> Path:
     data = copy.deepcopy(load_seed_scores())
     mutate(data)
     return write_json(tmp_path / "scores.json", data)
+
+
+def _valid_votes() -> dict:
+    """一組合法的六鍵 votes（overall + 五面向）。"""
+    votes = {"overall": {"label": "positive", "prob": 0.9}}
+    for name in FACET_DIMENSION_IDS:
+        votes[name] = {"label": "not-discussed", "prob": 0.7}
+    return votes
 
 
 # --- 合法 -------------------------------------------------------------------
@@ -84,6 +97,15 @@ def test_missing_top_level_section_is_reported(tmp_path: Path) -> None:
     assert any("meta" in message for message in errors)
 
 
+def test_missing_meta_section_is_reported(tmp_path: Path) -> None:
+    def mutate(data: dict) -> None:
+        del data["meta"]["sourcesCovered"]
+
+    errors = validate_path(write_broken_scores(tmp_path, mutate))
+
+    assert any("sourcesCovered" in message for message in errors)
+
+
 def test_wrong_type_is_reported_with_field_name(tmp_path: Path) -> None:
     def mutate(data: dict) -> None:
         data["models"][0]["score"] = "高分"
@@ -104,6 +126,32 @@ def test_out_of_range_score_is_reported(tmp_path: Path) -> None:
     assert any("quality" in message for message in errors)
 
 
+def test_dimension_null_is_allowed(tmp_path: Path) -> None:
+    """「資料不足」＝null，是合法值（不得顯示成 50）。"""
+    def mutate(data: dict) -> None:
+        data["models"][0]["dimensions"]["tokenUsage"] = None
+
+    assert validate_path(write_broken_scores(tmp_path, mutate)) == []
+
+
+def test_dimension_samples_negative_is_reported(tmp_path: Path) -> None:
+    def mutate(data: dict) -> None:
+        data["models"][0]["dimensionSamples"]["quality"] = -1
+
+    errors = validate_path(write_broken_scores(tmp_path, mutate))
+
+    assert any("dimensionSamples" in message for message in errors)
+
+
+def test_weights_out_of_range_is_reported(tmp_path: Path) -> None:
+    def mutate(data: dict) -> None:
+        data["meta"]["weights"]["quality"] = 1.5
+
+    errors = validate_path(write_broken_scores(tmp_path, mutate))
+
+    assert any("weights" in message for message in errors)
+
+
 def test_unknown_field_is_reported(tmp_path: Path) -> None:
     def mutate(data: dict) -> None:
         data["models"][0]["oops"] = True
@@ -112,6 +160,16 @@ def test_unknown_field_is_reported(tmp_path: Path) -> None:
     errors = validate_path(bad)
 
     assert any("oops" in message for message in errors)
+
+
+def test_price_moved_to_model_level_old_location_is_rejected(tmp_path: Path) -> None:
+    """v1.1 起 priceUsdPerMTok 在 model 層級；塞進 dimensions 應被擋。"""
+    def mutate(data: dict) -> None:
+        data["models"][0]["dimensions"]["priceUsdPerMTok"] = {"in": 1.0, "out": 2.0}
+
+    errors = validate_path(write_broken_scores(tmp_path, mutate))
+
+    assert any("priceUsdPerMTok" in message for message in errors)
 
 
 def test_bad_evidence_ref_is_reported(tmp_path: Path) -> None:
@@ -145,6 +203,29 @@ def test_unsupported_suffix_is_reported(tmp_path: Path) -> None:
     assert validate_path(bogus)
 
 
+# --- dimensions 鍵交叉檢查（實作裁定第 9 條）--------------------------------
+
+
+def test_dimensions_extra_key_is_reported(tmp_path: Path) -> None:
+    def mutate(data: dict) -> None:
+        data["models"][0]["dimensions"]["frontendFit"] = 60.0
+
+    errors = validate_path(write_broken_scores(tmp_path, mutate))
+
+    assert any("models[0].dimensions" in message for message in errors)
+    assert any("frontendFit" in message for message in errors)
+
+
+def test_dimensions_missing_key_is_reported(tmp_path: Path) -> None:
+    def mutate(data: dict) -> None:
+        del data["models"][1]["dimensions"]["speed"]
+
+    errors = validate_path(write_broken_scores(tmp_path, mutate))
+
+    assert any("models[1].dimensions" in message for message in errors)
+    assert any("speed" in message for message in errors)
+
+
 # --- 故意改壞：evidence.jsonl ----------------------------------------------
 
 
@@ -164,19 +245,60 @@ def _write_broken_evidence(tmp_path: Path, mutate) -> Path:
     return bad
 
 
-def test_invalid_label_is_reported(tmp_path: Path) -> None:
+def _scored_evidence_record() -> dict:
+    record = copy.deepcopy(_seed_evidence_records()[0])
+    record["votes"] = _valid_votes()
+    record["judge"] = "laya@55cf4c4"
+    return record
+
+
+def test_invalid_overall_label_is_reported(tmp_path: Path) -> None:
+    """overall 只接受 positive／negative／neutral（neutral 之外的 not-discussed 不行）。"""
     def mutate(record: dict) -> None:
-        record["label"] = "mixed"
+        record["votes"] = _valid_votes()
+        record["votes"]["overall"]["label"] = "not-discussed"
 
     errors = validate_path(_write_broken_evidence(tmp_path, mutate))
 
-    assert any("label" in message for message in errors)
+    assert any("overall" in message and "label" in message for message in errors)
     assert any("第 1 行" in message for message in errors)
+
+
+def test_facet_neutral_label_is_reported(tmp_path: Path) -> None:
+    """面向維度不接受 neutral（neutral 只屬於 overall，裁定第 8 條）。"""
+    def mutate(record: dict) -> None:
+        record["votes"] = _valid_votes()
+        record["votes"]["quality"]["label"] = "neutral"
+
+    errors = validate_path(_write_broken_evidence(tmp_path, mutate))
+
+    assert any("quality" in message for message in errors)
+
+
+def test_votes_missing_key_is_reported_with_key_name(tmp_path: Path) -> None:
+    def mutate(record: dict) -> None:
+        record["votes"] = _valid_votes()
+        del record["votes"]["speed"]
+
+    errors = validate_path(_write_broken_evidence(tmp_path, mutate))
+
+    assert any("speed" in message for message in errors)
+
+
+def test_votes_extra_key_is_reported_with_key_name(tmp_path: Path) -> None:
+    def mutate(record: dict) -> None:
+        record["votes"] = _valid_votes()
+        record["votes"]["vibes"] = {"label": "positive", "prob": 0.5}
+
+    errors = validate_path(_write_broken_evidence(tmp_path, mutate))
+
+    assert any("vibes" in message for message in errors)
 
 
 def test_prob_out_of_range_is_reported(tmp_path: Path) -> None:
     def mutate(record: dict) -> None:
-        record["prob"] = 1.5
+        record["votes"] = _valid_votes()
+        record["votes"]["quality"]["prob"] = 1.5
 
     errors = validate_path(_write_broken_evidence(tmp_path, mutate))
 
@@ -185,7 +307,8 @@ def test_prob_out_of_range_is_reported(tmp_path: Path) -> None:
 
 def test_bad_line_number_is_reported(tmp_path: Path) -> None:
     records = _seed_evidence_records()
-    records[1]["prob"] = -0.1
+    records[1]["votes"] = _valid_votes()
+    records[1]["votes"]["overall"]["prob"] = -0.1
     bad = tmp_path / "evidence.jsonl"
     bad.write_text(
         "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
@@ -198,14 +321,13 @@ def test_bad_line_number_is_reported(tmp_path: Path) -> None:
     assert any("prob" in message for message in errors)
 
 
-# --- 未評分 evidence（label/prob/judge 為 null）-----------------------------
+# --- 未評分 evidence（votes/judge 為 null）----------------------------------
 
 
-def test_unscored_evidence_with_null_judgement_fields_passes(tmp_path: Path) -> None:
+def test_unscored_evidence_with_null_votes_passes(tmp_path: Path) -> None:
     """plan.md 實作裁定第 7 條：結構合法但未評分＝合法。"""
     record = copy.deepcopy(_seed_evidence_records()[0])
-    record["label"] = None
-    record["prob"] = None
+    record["votes"] = None
     record["judge"] = None
     path = tmp_path / "unscored.jsonl"
     path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -226,17 +348,44 @@ def test_evidence_with_null_author_passes(tmp_path: Path) -> None:
     assert EvidenceRecord.model_validate(record).author is None
 
 
+def test_scored_evidence_passes(tmp_path: Path) -> None:
+    record = _scored_evidence_record()
+    path = tmp_path / "scored.jsonl"
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert validate_path(path) == []
+    parsed = EvidenceRecord.model_validate(record)
+    assert parsed.votes is not None
+    assert tuple(parsed.votes.model_dump()) == VOTE_IDS
+    assert parsed.judge == "laya@55cf4c4"
+
+
 # --- schema 模型與種子資料交叉檢查 -----------------------------------------
 
 
 def test_seed_models_validate_against_schema() -> None:
     document = ScoresDocument.model_validate(load_seed_scores())
 
-    assert document.meta.schemaVersion == 1
+    assert document.meta.schemaVersion == 1.1
     assert document.meta.kind == "community-sentiment"
     assert 3 <= len(document.models) <= 5
     # 種子資料必須自我標示是假資料
     assert "種子" in document.meta.notes
+    # 站方表格欄位由 meta.dimensions 驅動。
+    assert [spec.id for spec in document.meta.dimensions] == list(FACET_DIMENSION_IDS)
+    assert document.meta.sourcesCovered == ["reddit", "hn"]
+    assert set(document.meta.weights) == set(FACET_DIMENSION_IDS)
+    # 至少一個模型示範「資料不足」（維度 null），且至少一個定價為 null。
+    assert any(
+        value is None
+        for model in document.models
+        for value in model.dimensions.values()
+    )
+    assert any(model.priceUsdPerMTok is None for model in document.models)
+    # 每個模型的 dimensions 鍵都恰好等於 meta.dimensions。
+    declared = {spec.id for spec in document.meta.dimensions}
+    for model in document.models:
+        assert set(model.dimensions) == declared
 
 
 def test_seed_evidence_refs_point_to_real_lines() -> None:
