@@ -8,8 +8,13 @@
    預設用 default depth（不用 ``--quick``：quick profile 每個 subquery 只留 2 個來源，
    x 會被優先序較高的 reddit／hn 擠掉）。
 2. **過濾**：只留 ``reddit``／``hackernews``／``x``（來源白名單，擋掉 jobs／github
-   等雜訊）；排除非英文貼文（laya 是英文 checkpoint，見 R1 筆記坑 7）；排除同時提及
-   兩個以上模型名的貼文（歸屬不明，見 R1 筆記結尾警告）；缺 url／缺時間的丟棄。
+   等雜訊）；排除非英文貼文（laya 是英文 checkpoint，見 R1 筆記坑 7）；缺
+   url／缺時間的丟棄。接著套用**歸屬三態**判定（C6）：先沿用既有規則「同時提及
+   兩個以上清單模型名 → 丟」（歸屬不明）；再判斷貼文是否真的提到 query 模型，
+   若 query 未出現卻出現**其他**清單模型名，代表引擎的模糊比對把別人的貼文歸給
+   query（C2b 實測：查 ``Claude Sonnet 4`` 回大量 ``Sonnet 5.5`` 貼文），整筆丟棄
+   並計入 ``misattributed``；兩者皆未出現則保留，交由引擎 relevance 決定
+   （常見於留言上下文只寫「this model」的貼文）。
 3. **轉換**：``source``（hackernews→hn，x→x）、``url``、``postedAt``（ISO）、
    ``text``（title＋summary，截斷至 :data:`MAX_TEXT_CHARS` 字元，理由見證 R1 筆記
    坑 6 的 ~320 token state 預算）、``hash``（正規化文字的 sha256）、``modelId``、
@@ -47,7 +52,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from arena.enrich import Enricher, HttpEnricher
 from arena.fetch_models import load_manual_models
@@ -314,6 +319,40 @@ def _mention_pattern(name: str) -> re.Pattern[str]:
     return re.compile(r"(?<![\w.])" + re.escape(name) + r"(?![\w.])", re.IGNORECASE)
 
 
+def model_aliases(model: Mapping[str, str]) -> tuple[str, ...]:
+    """回傳在貼文文字中可用來辨識此模型的別名（供詞邊界比對）。
+
+    別名來源有三：
+
+    1. 顯示名本身（``Claude Sonnet 5.5``）。
+    2. id 的最後一段（``anthropic/claude-sonnet-5.5`` → ``claude-sonnet-5.5``）。
+    3. 顯示名**去掉首詞**的後綴（``Claude Sonnet 5.5`` → ``Sonnet 5.5``）——
+       社群貼文常省略廠牌前綴，只比對全名會漏掉跨版本誤歸（C2b 實測：查
+       ``Claude Sonnet 4`` 回傳的貼文多只寫 ``Sonnet 5.5``）。
+
+    後綴太短、不含任何字母，或（去首詞後綴）不含版本號數字者不採用
+    （例：``Grok 4.7`` 的 ``4.7`` 是純版本號、``GPT-6 Sol`` 的 ``Sol`` 太通用，
+    當成別名都會在無關文字裡誤命中）。回傳值去重且順序穩定。
+    """
+    name = str(model.get("name") or "").strip()
+    slug = str(model.get("id") or "").split("/")[-1].strip()
+    # (候選字串, 是否要求含數字)：只有去首詞的後綴要求帶版本號。
+    candidates: list[tuple[str, bool]] = [(name, False), (slug, False)]
+    words = name.split()
+    if len(words) >= 2:
+        candidates.append((" ".join(words[1:]), True))
+
+    aliases: list[str] = []
+    for candidate, require_digit in candidates:
+        if len(candidate) < 3 or not any(ch.isalpha() for ch in candidate):
+            continue
+        if require_digit and not any(ch.isdigit() for ch in candidate):
+            continue
+        if candidate not in aliases:
+            aliases.append(candidate)
+    return tuple(aliases)
+
+
 def compose_text(title: str, summary: str) -> str:
     """把 title 與 summary 合成一段文字（各自 strip、以換行分隔）。
 
@@ -382,6 +421,7 @@ class BuildStats:
     dropped_no_date: int = 0
     dropped_non_english: int = 0
     dropped_multi_model: int = 0
+    misattributed: int = 0
     dropped_invalid: int = 0
     duplicates: int = 0
     by_source: dict[str, int] = field(default_factory=dict)
@@ -393,15 +433,32 @@ class BuildStats:
 
 def build_records(
     payload: dict[str, Any],
-    model: dict[str, str],
-    model_names: Sequence[str],
+    model: Mapping[str, str],
+    all_models: Sequence[Mapping[str, str]],
     stats: BuildStats,
 ) -> list[dict[str, Any]]:
-    """把單一模型的引擎輸出轉成 evidence 列（尚未補缺、去重）。"""
+    """把單一模型的引擎輸出轉成 evidence 列（尚未補缺、去重）。
+
+    歸屬採**三態**判定（見模組 docstring）：先套既有「同時提及兩個以上清單模型名
+    → 丟」，再判斷 query 模型是否被提及；若 query 未出現、但出現**其他**清單模型
+    的別名，代表引擎的模糊比對把別人的貼文歸給 query（C2b 實測的 Sonnet 4／
+    Sonnet 5.5 情境），整筆丟棄並計入 :attr:`BuildStats.misattributed`。兩者皆
+    未出現時保留，交由引擎 relevance 決定（常見於留言上下文只寫「this model」）。
+    """
     records: list[dict[str, Any]] = []
     results = payload.get("results")
     if not isinstance(results, list):
         return records
+
+    # 多模型混雜判斷與「其他模型」偵測都用**完整清單**，即使 --models 只查一部分。
+    model_names = [str(entry.get("name") or "") for entry in all_models]
+    query_aliases = model_aliases(model)
+    other_aliases = [
+        alias
+        for entry in all_models
+        if entry.get("id") != model.get("id")
+        for alias in model_aliases(entry)
+    ]
 
     for result in results:
         if not isinstance(result, dict):
@@ -428,8 +485,14 @@ def build_records(
         if not is_probably_english(text):
             stats.dropped_non_english += 1
             continue
+        # 規則優先序：先既有 multi-model 丟除，再判 query 是否真的被提及。
         if len(models_mentioned(text, model_names)) >= 2:
             stats.dropped_multi_model += 1
+            continue
+        if not models_mentioned(text, query_aliases) and models_mentioned(
+            text, other_aliases
+        ):
+            stats.misattributed += 1
             continue
 
         # 截斷到 MAX_TEXT_CHARS（R1 筆記坑 6 的 ~320 token 預算）。
@@ -691,8 +754,8 @@ def run(
         return EXIT_ERROR
 
     enricher = enricher or HttpEnricher()
-    # 多模型混雜判斷用「完整清單」的模型名，即使 --models 只查一部分也一樣。
-    model_names = [model["name"] for model in all_models]
+    # 歸屬／多模型判斷用「完整清單」（含別名），即使 --models 只查一部分也一樣。
+    # （完整清單在 :func:`build_records` 內展開成 name／id 末段／去首詞後綴。）
 
     existing_hashes = load_existing_hashes(output_dir)
     seen_hashes = set(existing_hashes)
@@ -735,7 +798,7 @@ def run(
             else:
                 print(f"  [警告] 來源狀態 {note}", file=sys.stderr)
 
-        for record in build_records(outcome.payload, model, model_names, stats):
+        for record in build_records(outcome.payload, model, all_models, stats):
             if record["hash"] in seen_hashes:
                 stats.duplicates += 1
                 continue
@@ -809,7 +872,8 @@ def _print_summary(
     print(
         "  過濾：來源不符 {dropped_source}、缺 url {dropped_no_url}、"
         "缺時間/空文 {dropped_no_date}、非英文 {dropped_non_english}、"
-        "多模型 {dropped_multi_model}、schema 不合法 {dropped_invalid}；"
+        "多模型 {dropped_multi_model}、誤歸屬 {misattributed}、"
+        "schema 不合法 {dropped_invalid}；"
         "重複（含跨檔／同批）{duplicates}。".format(**stats.__dict__)
     )
     if stats.kept:
@@ -895,6 +959,7 @@ __all__ = [
     "latin_ratio",
     "load_existing_hashes",
     "merge_and_write",
+    "model_aliases",
     "models_mentioned",
     "normalize_text",
     "query_model",

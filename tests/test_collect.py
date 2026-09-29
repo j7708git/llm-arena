@@ -716,3 +716,122 @@ def test_offline_guard_blocks_default_runner(tmp_path: Path) -> None:
 
     assert rc == collect.EXIT_ERROR
     assert not (tmp_path / "evidence").exists()
+
+
+# --- 歸屬三態（C6，修正引擎模糊比對造成的模型錯歸屬） ------------------------
+
+SONNET4: dict = {"id": "anthropic/claude-sonnet-4", "name": "Claude Sonnet 4"}
+# 完整清單（含 C2b 誤歸情境的 Sonnet 5.5 與 GPT-6 Sol）。
+CATALOGUE: list[dict] = [
+    SONNET4,
+    {"id": "anthropic/claude-sonnet-5.5", "name": "Claude Sonnet 5.5"},
+    {"id": "openai/gpt-5", "name": "GPT-5"},
+    {"id": "openai/gpt-6-sol", "name": "GPT-6 Sol"},
+]
+
+
+def engine_result(text: str, slug: str = "post") -> dict:
+    return {
+        "source": "reddit",
+        "url": f"https://www.reddit.com/r/x/comments/{slug}/p/",
+        "published_at": "2026-09-22",
+        "title": text,
+        "summary": "",
+    }
+
+
+def build_as_sonnet4(text: str, slug: str = "post"):
+    """以 query=Claude Sonnet 4 對單則文字跑 build_records，回傳 (records, stats)。"""
+    stats = collect.BuildStats()
+    records = collect.build_records(
+        {"results": [engine_result(text, slug)]}, SONNET4, CATALOGUE, stats
+    )
+    return records, stats
+
+
+def test_model_aliases_include_short_form_and_drop_bare_versions() -> None:
+    assert collect.model_aliases(SONNET4) == (
+        "Claude Sonnet 4",
+        "claude-sonnet-4",
+        "Sonnet 4",
+    )
+    # 去首詞的純版本號（4.7）不含字母，不成為別名。
+    assert collect.model_aliases({"id": "x-ai/grok-4.7", "name": "Grok 4.7"}) == (
+        "Grok 4.7",
+        "grok-4.7",
+    )
+    # 去首詞後綴不含版本號數字者不採用（'Sol' 太通用）。
+    assert collect.model_aliases({"id": "openai/gpt-6-sol", "name": "GPT-6 Sol"}) == (
+        "GPT-6 Sol",
+        "gpt-6-sol",
+    )
+
+
+def test_misattributed_other_model_dropped() -> None:
+    """查 Sonnet 4、貼文只提 Sonnet 5.5 → 丟並計入 misattributed（C6 必測）。"""
+    records, stats = build_as_sonnet4("Sonnet 5.5 is a generational leap")
+
+    assert records == []
+    assert stats.misattributed == 1
+    assert stats.dropped_multi_model == 0
+
+
+def test_misattributed_other_model_full_name_dropped() -> None:
+    records, stats = build_as_sonnet4("GPT-5 is still my daily driver")
+
+    assert records == []
+    assert stats.misattributed == 1
+
+
+def test_unattributed_post_kept() -> None:
+    """兩者皆未出現（只寫 this model）→ 留，靠引擎 relevance。"""
+    records, stats = build_as_sonnet4("This model is great and I use it daily")
+
+    assert len(records) == 1
+    assert records[0]["modelId"] == SONNET4["id"]
+    assert stats.misattributed == 0
+
+
+def test_query_short_name_kept() -> None:
+    records, stats = build_as_sonnet4("Sonnet 4 is great")
+
+    assert len(records) == 1
+    assert records[0]["modelId"] == SONNET4["id"]
+    assert stats.misattributed == 0
+
+
+def test_query_full_name_kept() -> None:
+    records, _ = build_as_sonnet4("Claude Sonnet 4 is great")
+
+    assert len(records) == 1
+
+
+def test_other_version_number_is_not_query_match() -> None:
+    """詞邊界：Sonnet 4.5 不算提及 Sonnet 4，也不被誤判成其他清單模型 → 留。"""
+    records, stats = build_as_sonnet4("Sonnet 4.5 feels nicer")
+
+    assert len(records) == 1
+    assert stats.misattributed == 0
+
+
+def test_multi_model_rule_takes_precedence() -> None:
+    """同時提及 query 與其他模型（≥2 個全名）→ 走既有 multi-model 丟除。"""
+    records, stats = build_as_sonnet4("Claude Sonnet 4 vs GPT-5")
+
+    assert records == []
+    assert stats.dropped_multi_model == 1
+    assert stats.misattributed == 0
+
+
+def test_collect_summary_reports_misattributed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """端到端：誤歸屬的貼文不落地，且摘要印出誤歸屬計數。"""
+    payload = make_payload([engine_result("Sonnet 5.5 is a generational leap", "m1")])
+    runner = FakeRunner({"GPT-5": payload})
+
+    assert run_collect(tmp_path, runner) == 0
+
+    assert read_today(tmp_path) == []
+    assert "誤歸屬 1" in capsys.readouterr().out
+

@@ -209,8 +209,12 @@ X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控）�
 流程重點：
 
 - **過濾**：只留 `reddit`／`hackernews`／`x`（`source` 白名單，擋掉 jobs 等雜訊）；
-  排除非英文貼文（拉丁字母比例 < 0.6；`laya` 是英文 checkpoint）；
-  排除同時提及兩個以上設定模型名的貼文（歸屬不明）；缺 `url`／時間者丟棄。
+  排除非英文貼文（拉丁字母比例 < 0.6；`laya` 是英文 checkpoint）；缺 `url`／時間者丟棄。
+  最後做**歸屬三態**判定：同時提及兩個以上設定模型名 → 丟（歸屬不明）；貼文未提
+  query 模型、卻提及**其他**模型名（比對模型全名、id 末段、以及去廠牌首詞的版本後綴，
+  例：`Claude Sonnet 5.5` 也接受 `Sonnet 5.5`）→ 丟並計入 `誤歸屬`（引擎模糊比對造成
+  的錯歸屬，例：查 `Claude Sonnet 4` 回傳的 `Sonnet 5.5` 貼文）；兩者皆未出現 → 保留，
+  靠引擎 relevance（例如留言上下文只寫「this model」）。
 - **`text`**：`title` ＋ `summary` 合成後**截斷至 1200 字元**（`laya` 的 state
   實際可用約 320 tokens，見 `docs/research/jev-scoring.md` 坑 6）。
 - **`hash`**：正規化文字（小寫、空白壓扁）的 sha256，**跨所有 evidence 檔去重**
