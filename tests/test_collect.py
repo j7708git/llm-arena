@@ -475,7 +475,7 @@ def test_reddit_enricher_prefers_author_from_text() -> None:
 # --- 其他單元 ---------------------------------------------------------------
 
 
-def test_query_uses_model_name_and_quick_by_default(tmp_path: Path) -> None:
+def test_query_uses_model_name_and_default_depth(tmp_path: Path) -> None:
     runner = FakeRunner({"GPT-5": make_payload(BASE_RESULTS)})
     run_collect(tmp_path, runner)
 
@@ -494,6 +494,201 @@ def test_posted_at_normalized_to_utc_iso(tmp_path: Path) -> None:
 
     for record in read_today(tmp_path):
         assert record["postedAt"].endswith("Z")
+
+
+def test_cli_registers_collect_arguments() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["collect", "--days", "7", "--models", "GPT-5"])
+
+    assert args.days == 7
+    assert args.models == ["GPT-5"]
+    assert hasattr(args, "output_dir")
+
+
+# --- X／Twitter 來源 --------------------------------------------------------
+
+# X 列在 agent JSON 的實際形狀（2026-09-29 真抓 engine 輸出）：title 是 summary
+# 截斷前 140 字元，url 為 https://x.com/<handle>/status/<id>，無 author 欄位。
+X_POST: dict = {
+    "source": "x",
+    "url": "https://x.com/alice/status/1840000000000000001",
+    "published_at": "2026-09-24",
+    "title": "GPT-5 is a joy to use\n\nI love it",
+    "summary": "GPT-5 is a joy to use\n\nI love it a lot. Best model this year.",
+}
+
+X_MISSING_URL: dict = {
+    "source": "x",
+    "published_at": "2026-09-24",
+    "title": "GPT-5 without url",
+    "summary": "no permalink on this one",
+}
+
+X_NON_ENGLISH: dict = {
+    "source": "x",
+    "url": "https://x.com/bob/status/1840000000000000002",
+    "published_at": "2026-09-23",
+    "title": "這個模型很棒",
+    "summary": "我很喜歡 GPT-5 的表現，真的很不錯。",
+}
+
+
+def test_x_post_is_collected_with_author_from_url(tmp_path: Path) -> None:
+    """X 列正常轉換：source=x、url 永久連結、author 取自路徑、date 正規化。"""
+    runner = FakeRunner({"GPT-5": make_payload([X_POST])})
+
+    assert run_collect(tmp_path, runner) == 0
+
+    records = read_today(tmp_path)
+    assert len(records) == 1
+    record = records[0]
+    assert record["source"] == "x"
+    assert record["url"] == "https://x.com/alice/status/1840000000000000001"
+    assert record["author"] == "@alice"
+    assert record["postedAt"] == "2026-09-24T00:00:00Z"
+    # title 是 summary 的截斷前綴，text 只留 summary（不重複）。
+    assert record["text"] == X_POST["summary"]
+    assert record["votes"] is None and record["judge"] is None
+
+
+def test_x_missing_url_dropped(tmp_path: Path) -> None:
+    run_collect(tmp_path, FakeRunner({"GPT-5": make_payload([X_MISSING_URL])}))
+
+    assert read_today(tmp_path) == []
+
+
+def test_x_non_english_excluded(tmp_path: Path) -> None:
+    run_collect(tmp_path, FakeRunner({"GPT-5": make_payload([X_NON_ENGLISH])}))
+
+    assert read_today(tmp_path) == []
+
+
+def test_x_repost_of_reddit_is_deduplicated(tmp_path: Path) -> None:
+    """跨來源同文轉貼：Reddit 貼文與 X 轉推同文時只留先到的一筆。"""
+    shared_text = "GPT-5 is a joy to use\nI love GPT-5. submitted by /u/alice"
+    reddit = {
+        "source": "reddit",
+        "url": "https://www.reddit.com/r/x/comments/aaa/gpt5_first/",
+        "published_at": "2026-09-22",
+        "title": "GPT-5 is a joy to use",
+        "summary": "I love GPT-5. submitted by /u/alice",
+    }
+    x_repost = {
+        "source": "x",
+        "url": "https://x.com/alice/status/1840000000000000003",
+        "published_at": "2026-09-23",
+        "title": "GPT-5 is a joy to use",
+        "summary": "I love GPT-5. submitted by /u/alice",
+    }
+    runner = FakeRunner({"GPT-5": make_payload([reddit, x_repost])})
+
+    assert run_collect(tmp_path, runner) == 0
+
+    records = read_today(tmp_path)
+    assert len(records) == 1
+    assert records[0]["source"] == "reddit"
+    assert records[0]["hash"] == collect.content_hash(shared_text)
+
+
+def test_x_author_missing_when_url_is_not_permalink(tmp_path: Path) -> None:
+    """url 非標準永久連結時，author 為 null，但該筆仍可落地（schema 允許）。"""
+    odd = {
+        "source": "x",
+        "url": "https://x.com/i/web/status/1840000000000000004",
+        "published_at": "2026-09-24",
+        "title": "GPT-5 thoughts",
+        "summary": "GPT-5 thoughts and more.",
+    }
+    run_collect(tmp_path, FakeRunner({"GPT-5": make_payload([odd])}))
+
+    records = read_today(tmp_path)
+    assert len(records) == 1
+    assert records[0]["author"] is None
+
+
+def test_x_skipped_unconfigured_warns_and_continues(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """無憑證（skipped-unconfigured）：跳過 x、明確警告、其他來源照常、退出碼 0。"""
+    status = {"reddit": "ok", "hackernews": "ok", "x": "skipped-unconfigured"}
+    runner = FakeRunner({"GPT-5": make_payload(BASE_RESULTS, status=status)})
+    args = make_args(tmp_path, retries=2, retry_backoff=5.0)
+
+    rc = collect.run(
+        args,
+        runner=runner,
+        enricher=FakeEnricher(),
+        sleep=lambda _s: None,
+        now=FIXED_NOW,
+    )
+
+    assert rc == 0
+    # 預期跳過不重試：即使 retries>0 也只查一次。
+    assert len(runner.calls) == 1
+    assert any(record["source"] == "reddit" for record in read_today(tmp_path))
+    err = capsys.readouterr().err
+    assert "x" in err and "skipped-unconfigured" in err
+
+
+def test_unconfigured_sources_classification() -> None:
+    status = {"reddit": "ok", "x": "skipped-unconfigured"}
+
+    assert collect.unconfigured_sources(status) == ["x"]
+    assert collect.unhealthy_sources(status) == []
+
+
+def test_x_author_parsing_variants() -> None:
+    assert collect.x_author_from_url("https://x.com/a_b/status/123") == "@a_b"
+    assert collect.x_author_from_url("https://twitter.com/a_b/status/123") == "@a_b"
+    assert collect.x_author_from_url("https://www.x.com/a_b/status/123") == "@a_b"
+    # 內部轉址路徑沒有 <handle>/status/<id> 形狀，不誤判成作者。
+    assert collect.x_author_from_url("https://x.com/i/web/status/123") is None
+    assert collect.x_author_from_url("https://example.com/a/status/123") is None
+    assert collect.x_author_from_url("") is None
+
+
+def test_compose_text_drops_truncated_x_title() -> None:
+    """X 的 title 是 summary 的前綴（可能斷在詞中間），不應重複併入 text。"""
+    summary = "GPT-5 is a joy to use and the best model I have tried this year."
+    title = summary[:20]  # 斷在「...and the be」中間，下一個字元不是空白
+
+    assert collect.compose_text(title, summary) == summary
+
+
+def _capture_engine_command(monkeypatch: pytest.MonkeyPatch, *, deep: bool) -> list[str]:
+    captured: dict[str, list[str]] = {}
+
+    class FakeProc:
+        returncode = 0
+        stdout = json.dumps(make_payload([]))
+        stderr = ""
+
+    def fake_run(command, **_kwargs):
+        captured["command"] = list(command)
+        return FakeProc()
+
+    monkeypatch.setattr(collect.subprocess, "run", fake_run)
+    runner = collect.SubprocessRunner(
+        python=Path("/usr/bin/python3.12"), script=Path("vendor/last30days/last30days.py")
+    )
+    runner.run("GPT-5", days=30, deep=deep)
+    return captured["command"]
+
+
+def test_subprocess_runner_requests_x_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    """引擎命令必須明確要求 x，且不可用 --quick（quick 會把 x 擠掉）。"""
+    command = _capture_engine_command(monkeypatch, deep=False)
+
+    assert command[command.index("--search") + 1] == "reddit,hackernews,x"
+    assert "--quick" not in command
+    assert "--deep" not in command
+
+
+def test_subprocess_runner_deep_flag_is_forwarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    command = _capture_engine_command(monkeypatch, deep=True)
+
+    assert "--deep" in command
+    assert command[command.index("--search") + 1] == "reddit,hackernews,x"
 
 
 def test_cli_registers_collect_arguments() -> None:

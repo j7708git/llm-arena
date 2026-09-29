@@ -172,17 +172,17 @@ PY
 
 ### collect（社群收集，任務 C2）
 
-以 **vendored** 的 `last30days` 引擎抓近 30 天 Reddit／Hacker News 貼文，落地成
-`data/evidence/YYYY-MM-DD.jsonl`（UTC 日期）。引擎原始碼在 `vendor/last30days/`
-（pin commit `084662b501fb0dba95bd55eff0c258d35e0dc499`），來源與升級方式見
-`vendor/last30days/README.md`。
+以 **vendored** 的 `last30days` 引擎抓近 30 天 **Reddit／Hacker News／X（Twitter）**
+貼文，落地成 `data/evidence/YYYY-MM-DD.jsonl`（UTC 日期）。引擎原始碼在
+`vendor/last30days/`（pin commit `084662b501fb0dba95bd55eff0c258d35e0dc499`），
+來源與升級方式見 `vendor/last30days/README.md`。
 
 **Python 需求（重要）**：引擎需要 **Python >= 3.12**。`arena collect` 會優先使用
 `<repo>/.venv/bin/python`；若該檔不存在則用目前解譯器，版本太舊會直接報錯並附指令。
 可用 `ARENA_ENGINE_PYTHON` 指定其他 3.12+ 解譯器。
 
 ```bash
-# 抓 config/models.yaml 全部模型（預設近 30 天、--quick，模型間隔 30 秒避免限流）
+# 抓 config/models.yaml 全部模型（預設近 30 天、模型間隔 30 秒避免限流）
 .venv/bin/arena collect
 
 # 只抓指定模型（id 或 name），放大間隔
@@ -192,20 +192,35 @@ PY
 .venv/bin/arena collect --deep --days 60
 ```
 
+**來源與憑證**：每次查詢都以 `--search reddit,hackernews,x` 明確要求三個來源
+（X 需憑證才會啟用，見下）。X 的 agent JSON 沒有 `author` 欄位，但 `url` 是
+`https://x.com/<handle>/status/<id>` 永久連結，`author` 直接由路徑取得（`@handle`），
+不需要 `enrich` 補缺。
+
+X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控），可用下列任一方式：
+
+- `AUTH_TOKEN` ＋ `CT0`：瀏覽器登入 X 後的 cookie 值（引擎的 `bird` 後端使用）。
+- `XAI_API_KEY`：xAI API key。
+
+沒放憑證時會**優雅降級**：`--search` 仍要求 X，引擎對 X 回報
+`skipped-unconfigured`，`collect` 視為「預期跳過」——明確警告、不重試、不影響
+退出碼，Reddit／HN 照常收集（CI 等無憑證環境也能跑）。
+
 流程重點：
 
-- **過濾**：只留 `reddit`／`hackernews`（`source` 白名單，擋掉 jobs 等雜訊）；
+- **過濾**：只留 `reddit`／`hackernews`／`x`（`source` 白名單，擋掉 jobs 等雜訊）；
   排除非英文貼文（拉丁字母比例 < 0.6；`laya` 是英文 checkpoint）；
   排除同時提及兩個以上設定模型名的貼文（歸屬不明）；缺 `url`／時間者丟棄。
 - **`text`**：`title` ＋ `summary` 合成後**截斷至 1200 字元**（`laya` 的 state
   實際可用約 320 tokens，見 `docs/research/jev-scoring.md` 坑 6）。
 - **`hash`**：正規化文字（小寫、空白壓扁）的 sha256，**跨所有 evidence 檔去重**
-  （同批與跨檔都比對），重複只留一筆。
+  （同批與跨檔都比對，跨來源轉貼亦然），重複只留一筆。
 - **補缺**：`author` 用 Reddit 公開 JSON／貼文摘要的 `/u/` 回填，HN 討論頁連結與
   作者用 Algolia API 以標題查回（皆免 key）；補不到就留 `null`，不阻擋流程。
-  `votes`／`judge` 由 C3 `arena score` 回填。
-- **`source_status`**：只有 `ok`／`no-results` 視為正常；`rate-limited` 等失敗狀態
-  會退避重試（`--retries`／`--retry-backoff`），仍失敗則明確警告、不當成「沒討論」。
+  X 的作者已由永久連結取得，不走補缺。`votes`／`judge` 由 C3 `arena score` 回填。
+- **`source_status`**：只有 `ok`／`no-results` 視為正常；`skipped-unconfigured`
+  是預期跳過（見上）；`rate-limited` 等失敗狀態會退避重試
+  （`--retries`／`--retry-backoff`），仍失敗則明確警告、不當成「沒討論」。
 - **冪等**：同一天重跑採「讀入→合併去重→原子寫回」（先寫同目錄暫存檔再
   `os.replace`），不會產生半截檔案；重跑不重複寫入。
 - **離線防護**：偵測到 pytest 環境（或 `ARENA_OFFLINE=1`）且未注入 runner 時會
