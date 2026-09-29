@@ -6,7 +6,8 @@
 網站（[`jason-lab`](../jason-lab)）讀取本 repo 的資料產物來呈現排行榜。
 
 - 定位：真的能跑、能重跑的評測工具，而不是展示品
-- 狀態：**骨架階段**——CLI 五個子命令都已接上，功能陸續實作中（見 `docs/plan.md`）
+- 狀態：**骨架階段**——CLI 五個子命令（`fetch-models`／`collect`／`score`／`build`／`validate`）
+  皆已實作；上線門檻（C5 校準）尚未達成（見 `docs/plan.md`）
 
 ## 產出什麼
 
@@ -22,9 +23,9 @@
 3. **評分（兩層設計）**：
    - 慢層（做一次）：強推理模型 + rubric 定義「智能／速度／Token 效率／Token 用量／CP 值」五個面向的判斷準則與邊界案例。
    - 快層（做很多次）：JEV 家族（自架 `laya`）對逐則貼文投票並輸出**校準機率**（一次 pass 問六題、不解碼 output token）。
-4. **分數是算出來的**：每個面向 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)`，再依樣本數
-   向 50 收縮；總分＝各面向加權平均（權重見 `meta.weights`，null 維度剔除後重歸一）。
-   公式可驗證，模型不直接打分。
+4. **分數是算出來的**：每個面向 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)`，
+   再以偽樣本數 `K=10` 向 50 收縮（樣本越小越往 50 靠攏）；總分＝各面向加權平均
+   （權重見 `meta.weights`，null 維度剔除後重歸一）。公式可驗證，模型不直接打分。
 
 > 這是**社群聲量代理指標，不是 benchmark**。所有呈現都必須標明這點。
 
@@ -68,7 +69,7 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 # 3. 執行 CLI
 .venv/bin/arena --help
 .venv/bin/arena fetch-models  # 合併人工清單與 OpenRouter，寫入 data/models.json
-.venv/bin/arena build         # 尚未實作的子命令會以非 0 結束碼回報
+.venv/bin/arena build         # 由 evidence 聚合出 data/scores.json（會自動跑 validate）
 
 # 4. 跑測試
 .venv/bin/python -m pytest
@@ -132,7 +133,8 @@ neutral，五個面向用 positive／negative／`not-discussed`）：
 
 也可以不啟用虛擬環境，直接用 `python -m arena` 執行（需先安裝專案）。
 
-尚未實作的子命令會印出「尚未實作」訊息並以結束碼 `3` 收場，不會靜默成功。
+五個子命令（`fetch-models`／`collect`／`score`／`build`／`validate`）都已實作；
+不合法的資料一律以非 0 結束碼回報，不會靜默成功。
 
 ### fetch-models
 
@@ -215,6 +217,52 @@ Reddit 的 keyless 路徑會限流；連續抓多個模型時請保留 `--sleep`
 ```bash
 # 產生後驗證（結構合法但未評分的 evidence 也應回 0）
 .venv/bin/arena validate data/evidence/2026-09-29.jsonl
+```
+
+### build（聚合成 scores.json，任務 C4）
+
+讀 `data/evidence/*.jsonl` 與 `data/models.json`，由 evidence 的 `votes` 聚合出
+`data/scores.json`。**分數全部由公式算出，模型不直接打分**：
+
+- 只計**已評分**的列（`judge` 為 laya pin 版、`votes` 六鍵完整）；`votes` 為 `null`
+  的未評分列會跳過並在 stderr 報數量。
+- 每面向 `P`＝positive 數、`N`＝negative 數、`n = P + N`（`not-discussed` 不計入）；
+  `n = 0` → 該面向 `null`（「資料不足」，不得當成 50）。
+- `raw = (P − N) / n`，`dimScore = 50×(raw+1)×n/(n+K) + 50×K/(n+K)`，`K = 10`
+  為偽樣本數收縮（n=10 收一半、n=90 收 10%；樣本越小越往 50 靠攏），四捨五入到小數第一位。
+  例：`n=10` 全正 → `75.0`。
+- 總分 `score`＝非 null 面向的加權平均（權重 `meta.weights`，剔除 null 後**重歸一**），
+  以四捨五入後的面向分數計算，讓榜上數字可手算回推。
+- 模型層 `confidence`＝overall 正面率的 **Wilson 95% 下界**（z=1.96）。
+- `sampleSize = 0` 的模型**不入榜**，並列在 `meta.notes` 交代排除清單。
+- `evidence` 參照列出該模型**全部**的列（含未評分者），格式 `evidence/<檔名>#l<行號>`。
+
+輸出採原子寫入（先寫同目錄暫存檔再 `os.replace`、chmod 644），寫完自動以
+`validate_path` 驗證；**不合規則就不覆蓋原檔**並以非 0 結束碼收場。
+
+```bash
+# 依 data/evidence/*.jsonl 與 data/models.json 產出 data/scores.json（並自動 validate）
+.venv/bin/arena build
+
+# 指定窗口天數與輸出檔
+.venv/bin/arena build --window-days 60 --output /tmp/scores.json
+```
+
+**重跑一致性**（除 `meta.generatedAt` 與各模型的 `updatedAt` 外逐位元組相同）：
+
+```bash
+.venv/bin/arena build && cp data/scores.json /tmp/scores-a.json
+.venv/bin/arena build
+.venv/bin/python - <<'PY'
+import json
+a = json.load(open('/tmp/scores-a.json'))
+b = json.load(open('data/scores.json'))
+for doc in (a, b):
+    doc['meta'].pop('generatedAt')
+    for model in doc['models']:
+        model.pop('updatedAt')
+print('一致' if a == b else '不一致')
+PY
 ```
 
 ## 注意事項

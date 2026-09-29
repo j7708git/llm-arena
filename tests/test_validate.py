@@ -360,28 +360,25 @@ def test_scored_evidence_passes(tmp_path: Path) -> None:
     assert parsed.judge == "laya@55cf4c4"
 
 
-# --- schema 模型與種子資料交叉檢查 -----------------------------------------
+# --- schema 模型與 scores.json 交叉檢查 -------------------------------------
 
 
-def test_seed_models_validate_against_schema() -> None:
+def test_scores_document_validates_against_schema() -> None:
     document = ScoresDocument.model_validate(load_seed_scores())
 
     assert document.meta.schemaVersion == 1.1
     assert document.meta.kind == "community-sentiment"
-    assert 3 <= len(document.models) <= 5
-    # 種子資料必須自我標示是假資料
-    assert "種子" in document.meta.notes
+    assert len(document.models) >= 1
+    # 分數是公式算出來的社群資料，未經 C5 校準，必須如實標示。
+    assert document.meta.judge.calibrated is False
+    # 窗口偏誤說明必須在（C4 產出的 notes 含「窗口」字樣）。
+    assert "窗口" in document.meta.notes
     # 站方表格欄位由 meta.dimensions 驅動。
     assert [spec.id for spec in document.meta.dimensions] == list(FACET_DIMENSION_IDS)
-    assert document.meta.sourcesCovered == ["reddit", "hn"]
+    # sourcesCovered 是實際出現的來源、排序過且非空。
+    assert document.meta.sourcesCovered
+    assert document.meta.sourcesCovered == sorted(document.meta.sourcesCovered)
     assert set(document.meta.weights) == set(FACET_DIMENSION_IDS)
-    # 至少一個模型示範「資料不足」（維度 null），且至少一個定價為 null。
-    assert any(
-        value is None
-        for model in document.models
-        for value in model.dimensions.values()
-    )
-    assert any(model.priceUsdPerMTok is None for model in document.models)
     # 每個模型的 dimensions 鍵都恰好等於 meta.dimensions。
     declared = {spec.id for spec in document.meta.dimensions}
     for model in document.models:
@@ -391,7 +388,8 @@ def test_seed_models_validate_against_schema() -> None:
 def test_seed_evidence_refs_point_to_real_lines() -> None:
     """每個 model 的 evidence 參照都要真的指向 evidence 檔的對應行與模型。"""
     scores = load_seed_scores()
-    evidence_dir = SEED_SCORES.parent / "evidence"
+    # C4 產出的 evidence 參照格式為 `evidence/<檔名>#l<行號>`，故基準目錄是 data/。
+    evidence_dir = SEED_SCORES.parent
 
     for model in scores["models"]:
         assert model["evidence"], f"{model['id']} 沒有 evidence 參照"
@@ -419,8 +417,5 @@ def test_seed_model_ids_are_unique() -> None:
 
 
 def test_other_pipeline_commands_not_replying_validate_exit_codes() -> None:
-    """確認 validate 未誤動其他管線命令（build 尚未實作，應回 3）。
-
-    C4 實作 build 後請改寫或刪除本測試（屆時 test_validate.py 歸 C4 維護）。
-    """
-    assert main(["build"]) == 3
+    """C4 完成後 build 不再回「未實作」的 3；實際行為由 tests/test_build.py 驗證。"""
+    assert main(["build"]) != 3
