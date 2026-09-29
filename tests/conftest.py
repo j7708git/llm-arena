@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import pytest
 
+from arena import build as build_mod
 from arena import collect as collect_mod
 from arena import fetch_models as fm
 from arena import score as score_mod
@@ -39,6 +40,14 @@ def _no_network_no_repo_writes(
     monkeypatch.setattr(
         score_mod, "DEFAULT_EVIDENCE_GLOB", "_pytest_offline_nothing_*.jsonl"
     )
+
+    # build（C4）：輸入與輸出都導到暫存目錄／命不中的 glob，避免 dispatch
+    # smoke test（`main(["build"])`）讀寫 repo 的 data/evidence 與 data/scores.json。
+    monkeypatch.setattr(build_mod, "DEFAULT_OUTPUT", tmp_path / "scores.json")
+    monkeypatch.setattr(
+        build_mod, "DEFAULT_EVIDENCE_GLOB", "_pytest_offline_nothing_*.jsonl"
+    )
+    monkeypatch.setattr(build_mod, "DEFAULT_MODELS", tmp_path / "models.json")
 
     # collect：輸出目錄與去重掃描範圍導到暫存目錄，並強制離線。
     monkeypatch.setattr(
