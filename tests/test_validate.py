@@ -22,7 +22,7 @@ from arena.validate import validate_path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED_SCORES = ROOT / "data" / "scores.json"
-SEED_EVIDENCE = ROOT / "data" / "evidence" / "sample.jsonl"
+SEED_EVIDENCE = ROOT / "data" / "samples" / "evidence.sample.jsonl"
 
 
 def load_seed_scores() -> dict:

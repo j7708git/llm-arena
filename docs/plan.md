@@ -129,6 +129,9 @@
     模型層 `confidence`＝overall 正面率的 Wilson 95% 下界（樣本信任度）。
     `sampleSize=0` 的模型**不入榜**（不出現在 models[]，於 `meta.notes` 交代排除清單）。
     分數全部由公式算出，模型不直接打分。
+11. **`data/evidence/` 只放真實蒐集資料**（PM 裁定，2026-09-29）：種子範例移至
+    `data/samples/evidence.sample.jsonl`（站方開發/schema 示例用）。score/build 的
+    預設 glob 只讀 `data/evidence/*.jsonl`，假資料不得混入聚合與溯源連結。
 
 ## 任務拆分
 

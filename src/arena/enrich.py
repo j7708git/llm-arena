@@ -15,7 +15,7 @@
 
 - :class:`Enricher` 是介面，測試以假物件注入；正式為 :class:`HttpEnricher`。
 - 任何單筆補缺失敗都只回 ``(None, None)`` 並累計統計，**不丟例外**、不阻擋主流程。
-- Reddit 作者統一存成 ``u/<name>``（與種子資料 ``data/evidence/sample.jsonl`` 一致），
+- Reddit 作者統一存成 ``u/<name>``（與種子資料 ``data/samples/evidence.sample.jsonl`` 一致），
   HN 作者存裸使用者名（Algolia 原樣）。
 """
 
