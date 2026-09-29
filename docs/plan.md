@@ -121,9 +121,13 @@
 9. **`dimensions` 的鍵必須是 `meta.dimensions` 宣告過的 id**（validate 要交叉檢查）；
    `tokenEfficiency`（囉嗦與否／上下文利用率）與 `tokenUsage`（完成任務燒多少 token、
    額度消耗）兩欄 v1 先分開；若 C5 發現社群訊號分不開，合併為一欄屬 schema 變更。
-10. **總分公式**（C4）：每維度 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)` 再以 Wilson
-    下界依 `P+N` 樣本數向 50 收縮；`P+N=0` → null。總分＝`Σ w_i·dimScore_i / Σ w_i`
-    （只計非 null 維度）。權重讀 `meta.weights`（預設上值；調整＝改 config 重跑 build）。
+10. **總分公式**（C4）：每面向 `n=P+N`；`n=0` → `null`（資料不足）。
+    `raw=(P−N)/n`、`dimScore=50×(raw+1)×n/(n+K) + 50×K/(n+K)`（K=10 偽樣本數收縮：
+    n=10 收一半、n=90 收 10%，樣本越小越往 50 靠攏；K 寫死在 `build.py` 常數）。
+    總分 `score=Σ w_i·dim_i / Σ w_i`（只計非 null 面向），`w` 讀 `meta.weights`
+    （預設 quality 0.5／speed 0.2／priceValue 0.2／tokenEfficiency 0.05／tokenUsage 0.05）。
+    模型層 `confidence`＝overall 正面率的 Wilson 95% 下界（樣本信任度）。
+    `sampleSize=0` 的模型**不入榜**（不出現在 models[]，於 `meta.notes` 交代排除清單）。
     分數全部由公式算出，模型不直接打分。
 
 ## 任務拆分

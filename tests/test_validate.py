@@ -56,7 +56,7 @@ def test_seed_scores_pass(capsys: pytest.CaptureFixture[str]) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "符合 schema v1" in captured.out
+    assert "符合 schema v1.1" in captured.out
     assert captured.err == ""
 
 
@@ -65,7 +65,7 @@ def test_seed_evidence_pass(capsys: pytest.CaptureFixture[str]) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "符合 schema v1" in captured.out
+    assert "符合 schema v1.1" in captured.out
 
 
 def test_validate_path_returns_no_errors_for_seed() -> None:
