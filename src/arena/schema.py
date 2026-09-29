@@ -115,9 +115,15 @@ class EvidenceRecord(_ContractModel):
     author: str = Field(min_length=1, description="原作者")
     postedAt: datetime = Field(description="張貼時間（ISO 8601）")
     text: str = Field(min_length=1, description="貼文內容")
-    label: Label = Field(description="評分器的態度標籤")
-    prob: float = Field(ge=0, le=1, description="評分器給的校準機率")
-    judge: str = Field(min_length=1, description="評分器與版本，例如 laya@<sha>")
+    # 以下三欄由 C2 落地時先寫 null，交由 C3 `arena score` 回填；
+    # 因此「結構合法但尚未評分」是合法的 evidence（plan.md 實作裁定第 7 條）。
+    label: Label | None = Field(default=None, description="評分器的態度標籤；未評分為 null")
+    prob: float | None = Field(
+        default=None, ge=0, le=1, description="評分器給的校準機率；未評分為 null"
+    )
+    judge: str | None = Field(
+        default=None, min_length=1, description="評分器與版本，例如 laya@<sha>；未評分為 null"
+    )
 
 
 __all__ = [

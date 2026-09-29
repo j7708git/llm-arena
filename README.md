@@ -72,6 +72,34 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/python -m pytest
 ```
 
+### 評分相依（`arena score`，任務 C3）
+
+`arena score` 需要 `laya`（JEV 家族評分器，**CPU 可跑**）。它的 `torch` 預設會抓 CUDA
+wheel，本機請指定 CPU backend：
+
+```bash
+uv pip install --python .venv/bin/python -e ".[score,dev]" --torch-backend=cpu
+```
+
+首次執行 `arena score` 會下載約 842MB 的英文 checkpoint（存進 Hugging Face 快取，
+之後可離線重跑）。模型 revision、prompt、batch size 都固定在 `src/arena/score.py`，
+選型理由與坑見 `docs/research/jev-scoring.md`。
+
+```bash
+# 對預設路徑 data/evidence/*.jsonl 逐則評分（laya，CPU）
+.venv/bin/arena score
+
+# 指定單一檔（score 子命令的 CLI 參數待 cli.py 解凍；目前先用環境變數）
+ARENA_EVIDENCE_FILES=data/evidence/2026-09-29.jsonl .venv/bin/arena score
+
+# 重評所有行，包含已有 label 的行（預設會跳過）
+ARENA_SCORE_FORCE=1 .venv/bin/arena score
+```
+
+評分結果會把 `label`（positive／negative／neutral）、`prob`（＝laya 的 `answer_confidence`，
+即校準機率）、`judge`（`laya@55cf4c4`）回填進 evidence。輸出採**原子寫入**（先寫同目錄
+暫存檔再 rename），中途失敗不會留下半截 jsonl；已有 `label` 的行會跳過，因此可重複執行。
+
 也可以不啟用虛擬環境，直接用 `python -m arena` 執行（需先安裝專案）。
 
 尚未實作的子命令會印出「尚未實作」訊息並以結束碼 `3` 收場，不會靜默成功。

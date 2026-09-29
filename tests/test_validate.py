@@ -198,6 +198,22 @@ def test_bad_line_number_is_reported(tmp_path: Path) -> None:
     assert any("prob" in message for message in errors)
 
 
+# --- 未評分 evidence（label/prob/judge 為 null）-----------------------------
+
+
+def test_unscored_evidence_with_null_judgement_fields_passes(tmp_path: Path) -> None:
+    """plan.md 實作裁定第 7 條：結構合法但未評分＝合法。"""
+    record = copy.deepcopy(_seed_evidence_records()[0])
+    record["label"] = None
+    record["prob"] = None
+    record["judge"] = None
+    path = tmp_path / "unscored.jsonl"
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert validate_path(path) == []
+    assert main(["validate", str(path)]) == 0
+
+
 # --- schema 模型與種子資料交叉檢查 -----------------------------------------
 
 
