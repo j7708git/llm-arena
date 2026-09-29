@@ -214,6 +214,18 @@ def test_unscored_evidence_with_null_judgement_fields_passes(tmp_path: Path) -> 
     assert main(["validate", str(path)]) == 0
 
 
+def test_evidence_with_null_author_passes(tmp_path: Path) -> None:
+    """plan.md 實作裁定第 6 條：author 允許 null（last30days 常缺作者）。"""
+    record = copy.deepcopy(_seed_evidence_records()[0])
+    record["author"] = None
+    path = tmp_path / "no-author.jsonl"
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    assert validate_path(path) == []
+    assert main(["validate", str(path)]) == 0
+    assert EvidenceRecord.model_validate(record).author is None
+
+
 # --- schema 模型與種子資料交叉檢查 -----------------------------------------
 
 

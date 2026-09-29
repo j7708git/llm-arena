@@ -112,7 +112,11 @@ class EvidenceRecord(_ContractModel):
     modelId: str = Field(min_length=1, description="對應 scores.json 的 model id")
     source: str = Field(min_length=1, description="來源，例如 reddit／x／hn")
     url: str = Field(min_length=1, description="原文連結")
-    author: str = Field(min_length=1, description="原作者")
+    # 允許 null（plan.md 實作裁定第 6 條）：last30days 的 agent JSON 無 author 欄、
+    # raw profile 也只有部分有；C2 會盡量以公開 API 回填，補不到時留 null。
+    author: str | None = Field(
+        default=None, min_length=1, description="原作者；補不到時為 null"
+    )
     postedAt: datetime = Field(description="張貼時間（ISO 8601）")
     text: str = Field(min_length=1, description="貼文內容")
     # 以下三欄由 C2 落地時先寫 null，交由 C3 `arena score` 回填；
