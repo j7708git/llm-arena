@@ -323,3 +323,25 @@ C5 報告要算「模型 vs 人工」時也一律用 `hash` join。
     --markdown docs/calibration-report.md --json docs/calibration-report.json
   ```
   （n=150 時 ECE 用 `bins=5`；離開碼 0 通過、1 未達門檻、2 用法錯誤。）
+
+## 7. 裁決更新 v1.2（2026-09-29，owner 批准；與 §2.1/2.5/2.6 衝突處以本節為準）
+
+第一輪四模型標註的 40 筆平手暴露了兩條界線模糊，裁決如下（強制照做，不再是「多半/如實記下」語氣）：
+
+### R1 主體原則（強制）
+貼文**主要評價的對象不是本列 `modelId`**（包括講的是清單外的新模型，如 Astra/Fable/Luna/4 Pro 傳聞等）：
+- `overall = neutral`，且**五面向全部 `not-discussed`**（不是「依內容照標」——主體錯了，內容方向不屬於這列）。
+- `notes = off_target`。
+- 判斷步驟：先回答「這則主要在誇/罵**誰**」→ 不是本列 modelId 就走本規則，直接定案，不用再看面向。
+
+### R2 轉述型評價（面向照內容算）
+作者轉述官方公告、行銷文案、第三人稱 benchmark/排名（「快 30%」「排名第二」「半价」）：
+- `overall = neutral`（作者本人沒有表態）。
+- **五面向照內容的方向性陳述標**：「更快/延遲低」→ `speed=positive`；「便宜/半價/CP 高」→ `priceValue=positive`；
+  「排名第二/打敗 X」→ `quality=positive`（被比較輸的一方若是本列 modelId 則 `quality=negative`）；
+  空有形容詞（"revolutionary!"）但無方向性事實 → 該面向 `not-discussed`。
+- 直白版：面向量測「社群提到該面向時流出的情緒」，不分轉述或原創；overall 量測「作者本人的立場」。
+
+### 重標程序
+四標註員依 v1.2 重標第一輪的 40 筆平手列（不見彼此答案、不見第一輪自己的答案）；
+≥3/4 多數 → gold；仍平手 → 記 `ambiguous` 排除並如實入報告（歧義率是測量結果的一部分）。
