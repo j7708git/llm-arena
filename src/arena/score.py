@@ -1,19 +1,25 @@
-"""`arena score` 的實作（任務 C3）：以 laya JEV 模型對 evidence 逐則分類態度。
+"""`arena score` 的實作（任務 C3；A3 升級為 v1.1 六題投票）：以 laya JEV 模型對
+evidence 逐則投票。
 
-設計與所有 laya 用法以 ``docs/research/jev-scoring.md``（R1 研究筆記）為準：
+設計與所有 laya 用法以 ``docs/research/jev-scoring.md``（R1 研究筆記）為準；
+schema v1.1 的欄位語意以 ``docs/plan.md``「資料契約」與實作裁定 7~9 為準：
 
 - 模型：``convaiinnovations/laya`` 英文 checkpoint，pin revision
   ``55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851``（筆記「具體選型參數」）。
-- 題型：``choice``、三選項 ``positive`` / ``negative`` / ``neutral``，
-  prompt 直接照抄筆記「最小可用範例」的 ``QUESTION``。
+- 題型：**一次 pass 問六題**，每題都是三選項 ``choice``（仍落在 ``choice:3-5``
+  溫度 bucket）。``overall`` 沿用原本的總評題（positive／negative／neutral）；
+  五個面向題的標籤是 positive／negative／``not-discussed``（「貼文未談該面向，
+  或談了但沒有評價立場」）；identical 的 third option 是 not-discussed。
 - 校準機率用 ``answer_confidence``（＝``max(p)``），**不是** ``confidence``。
-- 送評的 state **只放貼文文字**（不放 modelId／模型名），避免評分器自我偏袒。
+- 送評的 state **只放貼文文字**（不放 modelId／模型名），避免評分器自我偏袒；
+  題目文字也不得出現任何模型名。
+- 六題結果以 ``votes``（六鍵）回填，``judge`` 寫 ``laya@55cf4c4``。
 - 固定 ``batch_size``：laya 同 process 重跑確定，但 batch 大小不同會有微浮點差
   （筆記「已知坑」第 9 條）。
 - ``USE_TF=0``、預設 ``LAYA_DEVICE=cpu``（筆記「已知坑」第 11 條、「具體選型參數」）。
 
 輸出採**原子寫入**：先寫同目錄的暫存檔、fsync 後以 ``os.replace`` 覆蓋原檔；
-過程中任何例外都不會留下半截 jsonl。已有 ``label`` 的行會被跳過（冪等），
+過程中任何例外都不會留下半截 jsonl。已有 ``votes`` 的行會被跳過（冪等），
 ``force`` 為真時才重評。
 
 CLI 參數：``cli.py`` 目前（2026-09-29）由多個任務並行維護而凍結，score 子命令
@@ -38,6 +44,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
+from arena.schema import OVERALL_VOTE_ID, VOTE_IDS
+
 # 必須在 transformers 被匯入前設定：環境同時安裝 TensorFlow 時，
 # transformers 匯入期探測 TF 可能造成 abseil deadlock（R1 筆記「已知坑」第 11 條）。
 os.environ.setdefault("USE_TF", "0")
@@ -52,7 +60,8 @@ EXIT_ERROR = 1
 MODEL_ID = "convaiinnovations/laya"
 REVISION = "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"
 JUDGE = "laya@55cf4c4"
-QUESTION_ID = "attitude"
+# overall（總評）題的 id；沿用 v1 的命名，作為 votes 的第一鍵。
+QUESTION_ID = OVERALL_VOTE_ID
 
 # 固定 batch size：laya 官方明載 batch 大小不同可能造成微小浮點差，
 # 會讓決策在門檻邊緣翻面；C3 的「可重現」要求固定此值（R1 筆記「已知坑」第 9 條）。
@@ -61,10 +70,15 @@ DEFAULT_BATCH_SIZE = 8
 # `arena score` 未指定檔案時掃描的預設路徑。
 DEFAULT_EVIDENCE_GLOB = "data/evidence/*.jsonl"
 
-# 三類態度題；直接照抄 R1 筆記「最小可用範例」。
-# 選項標籤刻意使用語意字（不是 true/false、yes/no），官方明載模型可能跟標籤走。
+# 一次 pass 六題：overall（總評）＋五個面向維度，每題都是三選項 choice。
+# 選項標籤刻意使用語意字（不是 true/false、yes/no），官方明載模型可能跟標籤走
+# （R1 筆記「已知坑」第 4 條）。題目文字不得出現任何模型名（state 只有貼文）。
+#
+# 五個面向題的第三選項一律是 `not-discussed`：貼文未談該面向，或談了但沒有
+# 評價立場。`neutral` 只屬於 overall；`not-discussed` 不適用於 overall
+# （plan.md 實作裁定第 8 條）。
 QUESTION: dict[str, dict[str, Any]] = {
-    "attitude": {
+    "overall": {
         "type": "choice",
         "instructions": (
             "What is the author's overall attitude toward the AI model discussed in this post?"
@@ -79,8 +93,104 @@ QUESTION: dict[str, dict[str, Any]] = {
                 "or negative stance."
             ),
         },
-    }
+    },
+    "quality": {
+        "type": "choice",
+        "instructions": (
+            "What is the author's attitude toward the model's capability and output "
+            "quality (correctness, intelligence, reliability)?"
+        ),
+        "criteria": {
+            "positive": (
+                "The author praises the model's capability or output quality, or considers "
+                "it correct, smart, or reliable."
+            ),
+            "negative": (
+                "The author criticises the model's capability, correctness, intelligence, "
+                "or reliability."
+            ),
+            "not-discussed": (
+                "The post does not discuss the model's capability or output quality, or "
+                "mentions it without evaluating it."
+            ),
+        },
+    },
+    "speed": {
+        "type": "choice",
+        "instructions": (
+            "What is the author's attitude toward the model's response speed, latency, "
+            "or throughput?"
+        ),
+        "criteria": {
+            "positive": "The author praises the model as fast, responsive, or high-throughput.",
+            "negative": "The author criticises the model as slow, laggy, or low-throughput.",
+            "not-discussed": (
+                "The post does not discuss the model's response speed or latency, or "
+                "mentions it without evaluating it."
+            ),
+        },
+    },
+    "tokenEfficiency": {
+        "type": "choice",
+        "instructions": (
+            "What is the author's attitude toward how concisely the model answers and how "
+            "efficiently it uses context and tokens?"
+        ),
+        "criteria": {
+            "positive": (
+                "The author praises the model for being concise or for using context and "
+                "tokens efficiently."
+            ),
+            "negative": (
+                "The author criticises the model for being verbose, rambling, or wasteful "
+                "with context or tokens."
+            ),
+            "not-discussed": (
+                "The post does not discuss the model's verbosity or context/token "
+                "efficiency, or mentions it without evaluating it."
+            ),
+        },
+    },
+    "tokenUsage": {
+        "type": "choice",
+        "instructions": (
+            "What is the author's attitude toward how many tokens (or how much of a usage "
+            "quota) the model consumes to complete tasks?"
+        ),
+        "criteria": {
+            "positive": (
+                "The author praises the model for consuming few tokens or for being light "
+                "on usage limits."
+            ),
+            "negative": (
+                "The author criticises the model for consuming many tokens or for draining "
+                "usage limits quickly."
+            ),
+            "not-discussed": (
+                "The post does not discuss how many tokens or how much quota the model "
+                "consumes, or mentions it without evaluating it."
+            ),
+        },
+    },
+    "priceValue": {
+        "type": "choice",
+        "instructions": (
+            "What is the author's attitude toward the model's price and value for money "
+            "(API pricing, subscription cost, or free-tier value)?"
+        ),
+        "criteria": {
+            "positive": "The author considers the model cheap, affordable, or good value.",
+            "negative": "The author considers the model expensive, overpriced, or poor value.",
+            "not-discussed": (
+                "The post does not discuss the model's price or value for money, or "
+                "mentions it without evaluating it."
+            ),
+        },
+    },
 }
+
+# 題目鍵必須與 schema 的 votes 鍵集合一致，否則回填會缺鍵／多鍵。
+assert tuple(QUESTION) == VOTE_IDS, "QUESTION 的題目鍵必須等於 schema 的 VOTE_IDS"
 
 
 class ScoreError(RuntimeError):
@@ -88,11 +198,18 @@ class ScoreError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class Prediction:
-    """單則貼文的評分結果。"""
+class Vote:
+    """單一題目的投票：標籤 + 校準機率。"""
 
     label: str
     prob: float
+
+
+@dataclass(frozen=True)
+class Prediction:
+    """單則貼文的六題投票結果（鍵為 `VOTE_IDS`）。"""
+
+    votes: dict[str, Vote]
 
 
 class Predictor(Protocol):
@@ -149,14 +266,16 @@ class LayaPredictor:
         results = self.agent.predict_batch(states, QUESTION, batch_size=self.batch_size)
         predictions: list[Prediction] = []
         for result in results:
-            answer = result["answers"][QUESTION_ID]
-            predictions.append(
-                Prediction(
-                    label=str(answer["choice"]),
-                    # 校準機率一律用 answer_confidence（=max(p)），不是 confidence。
-                    prob=float(answer["answer_confidence"]),
+            answers = result["answers"]
+            votes = {
+                # 校準機率一律用 answer_confidence（=max(p)），不是 confidence。
+                qid: Vote(
+                    label=str(answers[qid]["choice"]),
+                    prob=float(answers[qid]["answer_confidence"]),
                 )
-            )
+                for qid in QUESTION
+            }
+            predictions.append(Prediction(votes=votes))
         return predictions
 
 
@@ -202,12 +321,12 @@ def _load_file(path: Path) -> _FileWork:
 
 
 def _is_scored(record: dict[str, Any]) -> bool:
-    """已評分的定義：``label`` 非 null。"""
-    return record.get("label") is not None
+    """已評分的定義：``votes`` 非 null（v1.1；v1 的 label 已移除）。"""
+    return record.get("votes") is not None
 
 
 def _collect_tasks(plans: Sequence[_FileWork], force: bool) -> list[_Task]:
-    """挑出需要評分的行；force 為真時全部重評，否則跳過已有 label 的行（冪等）。"""
+    """挑出需要評分的行；force 為真時全部重評，否則跳過已有 votes 的行（冪等）。"""
     tasks: list[_Task] = []
     for file_index, plan in enumerate(plans):
         for line_index, record in enumerate(plan.records):
@@ -248,19 +367,39 @@ def _apply(
     tasks: Sequence[_Task],
     predictor: Predictor,
 ) -> int:
-    """呼叫預測器回填 label／prob／judge，並以原子寫入保存有變動的檔案。"""
+    """呼叫預測器回填 votes／judge，並以原子寫入保存有變動的檔案。"""
     predictions = predictor.classify([task.state for task in tasks])
     if len(predictions) != len(tasks):
         raise ScoreError(
             f"預測器回傳 {len(predictions)} 筆，與輸入 {len(tasks)} 筆不符"
         )
 
+    expected_ids = set(QUESTION)
     changed: dict[int, set[int]] = {}
     for task, prediction in zip(tasks, predictions):
-        record = plans[task.file_index].records[task.line_index]
+        plan = plans[task.file_index]
+        got_ids = set(prediction.votes)
+        if got_ids != expected_ids:
+            details: list[str] = []
+            missing = sorted(expected_ids - got_ids)
+            extra = sorted(got_ids - expected_ids)
+            if missing:
+                details.append("缺 " + "、".join(missing))
+            if extra:
+                details.append("多 " + "、".join(extra))
+            raise ScoreError(
+                f"{plan.path} 第 {task.line_index + 1} 行："
+                f"預測器回傳的投票鍵不符（{'；'.join(details)}）"
+            )
+        record = plan.records[task.line_index]
         assert record is not None  # _collect_tasks 已剔除空白行
-        record["label"] = prediction.label
-        record["prob"] = prediction.prob
+        # v1 的舊欄位（label／prob）一併移除，避免 extra="forbid" 擋下新檔。
+        record.pop("label", None)
+        record.pop("prob", None)
+        record["votes"] = {
+            qid: {"label": vote.label, "prob": vote.prob}
+            for qid, vote in prediction.votes.items()
+        }
         record["judge"] = JUDGE
         changed.setdefault(task.file_index, set()).add(task.line_index)
 
@@ -334,7 +473,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="重評所有行，包含已有 label 的行（預設跳過）",
+        help="重評所有行，包含已有 votes 的行（預設跳過）",
     )
 
 
@@ -391,6 +530,7 @@ __all__ = [
     "QUESTION_ID",
     "REVISION",
     "ScoreError",
+    "Vote",
     "add_arguments",
     "build_state",
     "resolve_paths",

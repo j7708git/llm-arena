@@ -11,7 +11,7 @@
 3. **轉換**：``source``（hackernews→hn）、``url``、``postedAt``（ISO）、
    ``text``（title＋summary，截斷至 :data:`MAX_TEXT_CHARS` 字元，理由見證 R1 筆記
    坑 6 的 ~320 token state 預算）、``hash``（正規化文字的 sha256）、``modelId``、
-   ``author``；``label``／``prob``／``judge`` 一律 ``null``，交給 C3 回填。
+   ``author``；``votes``／``judge`` 一律 ``null``，交給 C3 回填。
 4. **補缺**：``author`` 與 HN 討論頁連結以公開 API 回填（見 :mod:`arena.enrich`）；
    失敗留 ``null``，不阻擋。
 5. **去重**：與 ``data/evidence/*.jsonl`` 既有的 hash（跨檔）及同批內部都比對，
@@ -405,8 +405,8 @@ def build_records(
             "author": None,
             "postedAt": posted_at,
             "text": text[:MAX_TEXT_CHARS],
-            "label": None,
-            "prob": None,
+            # v1.1：未評分時 votes／judge 為 null，交由 C3 `arena score` 回填。
+            "votes": None,
             "judge": None,
         }
         records.append(record)

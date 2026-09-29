@@ -1,4 +1,4 @@
-"""`arena score` 的測試（任務 C3）。
+"""`arena score` 的測試（任務 C3；A3 升級為 v1.1 六題投票）。
 
 核心邏輯用假 predictor 注入，不載入真模型；真模型整合測試以 ``ARENA_RUN_SLOW=1``
 閘門跳過，預設 CI 保持綠燈。
@@ -22,18 +22,34 @@ from arena.score import (
     LayaPredictor,
     Prediction,
     ScoreError,
+    Vote,
     build_state,
     resolve_paths,
     run,
     score_paths,
 )
+from arena.schema import FACET_DIMENSION_IDS, VOTE_IDS
 from arena.validate import validate_path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED_EVIDENCE = ROOT / "data" / "evidence" / "sample.jsonl"
 
+OVERALL = "overall"
+FACETS = FACET_DIMENSION_IDS
+
 
 # --- 測試替身 ---------------------------------------------------------------
+
+
+def make_votes(
+    overall: tuple[str, float] = ("neutral", 0.5),
+    facet: tuple[str, float] = ("not-discussed", 0.5),
+) -> dict[str, Vote]:
+    """組出六鍵投票；overall 與五面向可分開指定（label, prob）。"""
+    votes = {OVERALL: Vote(overall[0], overall[1])}
+    for name in FACETS:
+        votes[name] = Vote(facet[0], facet[1])
+    return votes
 
 
 class FakePredictor:
@@ -46,7 +62,7 @@ class FakePredictor:
     def classify(self, states: list[dict[str, str]]) -> list[Prediction]:
         self.calls.append(states)
         return [
-            self.table.get(state["post"], Prediction("neutral", 0.5)) for state in states
+            self.table.get(state["post"], Prediction(make_votes())) for state in states
         ]
 
     @property
@@ -67,8 +83,7 @@ def _record(
     *,
     model_id: str = "anthropic/claude-sonnet-4",
     text: str = "This model is fine.",
-    label: str | None = None,
-    prob: float | None = None,
+    votes: dict | None = None,
     judge: str | None = None,
 ) -> dict:
     return {
@@ -79,10 +94,13 @@ def _record(
         "author": "u/someone",
         "postedAt": "2026-09-24T14:32:00Z",
         "text": text,
-        "label": label,
-        "prob": prob,
+        "votes": votes,
         "judge": judge,
     }
+
+
+def _stored_votes(votes: dict[str, Vote]) -> dict[str, dict]:
+    return {qid: {"label": vote.label, "prob": vote.prob} for qid, vote in votes.items()}
 
 
 def _write(path: Path, records: list[dict]) -> Path:
@@ -109,18 +127,39 @@ def _run(path: Path, predictor, *, force: bool = False) -> int:
 # --- 回填正確性 -------------------------------------------------------------
 
 
-def test_backfills_unscored_fields(tmp_path: Path) -> None:
+def test_backfills_six_votes(tmp_path: Path) -> None:
     path = _write(tmp_path / "e.jsonl", [_record("h1", text="Great model, love it.")])
-    fake = FakePredictor({"Great model, love it.": Prediction("positive", 0.91)})
+    expected = make_votes(overall=("positive", 0.91), facet=("positive", 0.66))
+    fake = FakePredictor({"Great model, love it.": Prediction(expected)})
 
     assert _run(path, fake) == EXIT_OK
 
     record = _read(path)[0]
-    assert record["label"] == "positive"
-    assert record["prob"] == pytest.approx(0.91)
+    assert set(record["votes"]) == set(VOTE_IDS)
+    assert record["votes"][OVERALL] == {"label": "positive", "prob": pytest.approx(0.91)}
+    for name in FACETS:
+        assert record["votes"][name]["label"] == "positive"
+        assert record["votes"][name]["prob"] == pytest.approx(0.66)
     assert record["judge"] == JUDGE
     assert record["judge"] == "laya@55cf4c4"
+    # 舊欄位不得殘留（schema extra="forbid"）。
+    assert "label" not in record and "prob" not in record
     # 回填後必須是合法 evidence。
+    assert validate_path(path) == []
+
+
+def test_legacy_label_prob_fields_are_removed(tmp_path: Path) -> None:
+    """v1 舊檔（label/prob）重評後要清掉舊欄位，否則新 schema 會擋。"""
+    record = _record("h1", text="old format")
+    record["label"] = "positive"
+    record["prob"] = 0.8
+    path = _write(tmp_path / "e.jsonl", [record])
+
+    assert _run(path, FakePredictor(), force=True) == EXIT_OK
+
+    saved = _read(path)[0]
+    assert "label" not in saved and "prob" not in saved
+    assert set(saved["votes"]) == set(VOTE_IDS)
     assert validate_path(path) == []
 
 
@@ -130,24 +169,52 @@ def test_prob_uses_answer_confidence_not_confidence(tmp_path: Path) -> None:
 
     class StubAgent:
         def predict_batch(self, states, questions, batch_size=None):
-            return [
-                {
-                    "answers": {
-                        "attitude": {
-                            "choice": "negative",
-                            "confidence": 0.42,
-                            "answer_confidence": 0.93,
-                        }
+            results = []
+            for _state in states:
+                answers = {}
+                for qid in questions:
+                    answers[qid] = {
+                        "choice": "negative" if qid == OVERALL else "positive",
+                        "confidence": 0.42,
+                        "answer_confidence": 0.93 if qid == OVERALL else 0.88,
                     }
-                }
-            ]
+                results.append({"answers": answers})
+            return results
 
     real = LayaPredictor(StubAgent())
     assert _run(path, real) == EXIT_OK
 
     record = _read(path)[0]
-    assert record["label"] == "negative"
-    assert record["prob"] == pytest.approx(0.93)
+    assert record["votes"][OVERALL]["label"] == "negative"
+    assert record["votes"][OVERALL]["prob"] == pytest.approx(0.93)
+    assert record["votes"]["quality"]["prob"] == pytest.approx(0.88)
+
+
+def test_predictor_asked_all_six_questions(tmp_path: Path) -> None:
+    """確認一次 pass 真的送六題（每題三個選項，仍落 choice:3-5）。"""
+    path = _write(tmp_path / "e.jsonl", [_record("h1", text="text")])
+    seen: dict = {}
+
+    class CapturingAgent:
+        def predict_batch(self, states, questions, batch_size=None):
+            seen["questions"] = questions
+            results = []
+            for _state in states:
+                results.append(
+                    {
+                        "answers": {
+                            qid: {"choice": "not-discussed", "answer_confidence": 0.5}
+                            for qid in questions
+                        }
+                    }
+                )
+            return results
+
+    assert _run(path, LayaPredictor(CapturingAgent())) == EXIT_OK
+
+    assert list(seen["questions"]) == list(VOTE_IDS)
+    for qid, spec in seen["questions"].items():
+        assert len(spec["criteria"]) == 3, qid
 
 
 def test_state_contains_only_post_text(tmp_path: Path) -> None:
@@ -174,26 +241,32 @@ def test_build_state_only_has_post_key() -> None:
 # --- 冪等與 force -----------------------------------------------------------
 
 
-def test_skips_already_labeled_lines(tmp_path: Path) -> None:
-    labeled = _record(
-        "h1", text="already scored", label="positive", prob=0.8, judge="laya@abc1234"
+def test_skips_already_voted_lines(tmp_path: Path) -> None:
+    voted = _record(
+        "h1",
+        text="already scored",
+        votes=_stored_votes(
+            make_votes(overall=("positive", 0.8), facet=("positive", 0.7))
+        ),
+        judge="laya@abc1234",
     )
     unscored = _record("h2", text="needs scoring")
-    path = _write(tmp_path / "e.jsonl", [labeled, unscored])
+    path = _write(tmp_path / "e.jsonl", [voted, unscored])
     original_lines = path.read_text(encoding="utf-8").splitlines()
-    fake = FakePredictor({"needs scoring": Prediction("negative", 0.7)})
+    fake = FakePredictor(
+        {"needs scoring": Prediction(make_votes(overall=("negative", 0.7)))}
+    )
 
     assert _run(path, fake) == EXIT_OK
 
     assert fake.seen_texts == ["needs scoring"]
     records = _read(path)
     # 已評分的行原封不動。
-    assert records[0]["label"] == "positive"
-    assert records[0]["prob"] == pytest.approx(0.8)
+    assert records[0]["votes"][OVERALL]["label"] == "positive"
     assert records[0]["judge"] == "laya@abc1234"
     assert json.dumps(records[0], ensure_ascii=False) == original_lines[0]
     # 未評分的行被回填。
-    assert records[1]["label"] == "negative"
+    assert records[1]["votes"][OVERALL]["label"] == "negative"
     assert records[1]["judge"] == JUDGE
 
 
@@ -217,15 +290,24 @@ def test_second_run_is_idempotent_and_does_not_load_model(
 def test_force_re_evaluates_all_lines(tmp_path: Path) -> None:
     path = _write(
         tmp_path / "e.jsonl",
-        [_record("h1", text="t", label="positive", prob=0.9, judge="laya@abc1234")],
+        [
+            _record(
+                "h1",
+                text="t",
+                votes=_stored_votes(make_votes(overall=("positive", 0.9))),
+                judge="laya@abc1234",
+            )
+        ],
     )
-    fake = FakePredictor({"t": Prediction("negative", 0.2)})
+    fake = FakePredictor(
+        {"t": Prediction(make_votes(overall=("negative", 0.2)))}
+    )
 
     assert _run(path, fake, force=True) == EXIT_OK
 
     record = _read(path)[0]
-    assert record["label"] == "negative"
-    assert record["prob"] == pytest.approx(0.2)
+    assert record["votes"][OVERALL]["label"] == "negative"
+    assert record["votes"][OVERALL]["prob"] == pytest.approx(0.2)
     assert record["judge"] == JUDGE
 
 
@@ -240,6 +322,23 @@ def test_failure_leaves_original_file_intact(tmp_path: Path) -> None:
 
     assert path.read_bytes() == original
     # 不留下暫存檔。
+    assert sorted(item.name for item in tmp_path.iterdir()) == ["e.jsonl"]
+
+
+def test_incomplete_predictor_votes_are_rejected(tmp_path: Path) -> None:
+    """預測器若少回某題，應報錯指名缺哪個鍵，且不寫檔。"""
+    path = _write(tmp_path / "e.jsonl", [_record("h1", text="x")])
+    original = path.read_bytes()
+
+    class MissingFacetPredictor:
+        def classify(self, states):
+            votes = make_votes()
+            del votes["speed"]
+            return [Prediction(votes) for _ in states]
+
+    assert _run(path, MissingFacetPredictor()) == EXIT_ERROR
+
+    assert path.read_bytes() == original
     assert sorted(item.name for item in tmp_path.iterdir()) == ["e.jsonl"]
 
 
@@ -259,16 +358,16 @@ def test_multiple_lines_backfilled_in_one_run(tmp_path: Path) -> None:
     )
     fake = FakePredictor(
         {
-            "a": Prediction("positive", 0.9),
-            "b": Prediction("negative", 0.8),
-            "c": Prediction("neutral", 0.6),
+            "a": Prediction(make_votes(overall=("positive", 0.9))),
+            "b": Prediction(make_votes(overall=("negative", 0.8))),
+            "c": Prediction(make_votes(overall=("neutral", 0.6))),
         }
     )
 
     assert _run(path, fake) == EXIT_OK
 
     assert len(fake.calls) == 1  # 未評分的行一次送評
-    labels = [record["label"] for record in _read(path)]
+    labels = [record["votes"][OVERALL]["label"] for record in _read(path)]
     assert labels == ["positive", "negative", "neutral"]
 
 
@@ -284,7 +383,9 @@ def test_reproducible_for_fixed_inputs(tmp_path: Path) -> None:
         directory.mkdir()
         path = _write(directory / "e.jsonl", records)
         # 同一組輸入、同一個 predictor 實作 → 結果必須逐位元一致。
-        table = {f"text {i}": Prediction("neutral", 0.5) for i in range(5)}
+        table = {
+            f"text {i}": Prediction(make_votes(overall=("neutral", 0.5))) for i in range(5)
+        }
         score_paths([path], FakePredictor(table))
         outputs.append([record for record in _read(path)])
 
@@ -299,7 +400,14 @@ def test_no_pending_does_not_load_model(
 ) -> None:
     path = _write(
         tmp_path / "e.jsonl",
-        [_record("h1", text="t", label="neutral", prob=0.7, judge=JUDGE)],
+        [
+            _record(
+                "h1",
+                text="t",
+                votes=_stored_votes(make_votes(overall=("neutral", 0.7))),
+                judge=JUDGE,
+            )
+        ],
     )
 
     def _boom(*args, **kwargs):
@@ -371,8 +479,7 @@ def test_real_laya_scores_sample_reproducibly(tmp_path: Path) -> None:
         if line.strip()
     ]
     for record in records:
-        record["label"] = None
-        record["prob"] = None
+        record["votes"] = None
         record["judge"] = None
 
     predictor = LayaPredictor.load()
@@ -384,7 +491,7 @@ def test_real_laya_scores_sample_reproducibly(tmp_path: Path) -> None:
         assert score_paths([path], predictor) == EXIT_OK
         scored = _read(path)
         assert all(record["judge"] == JUDGE for record in scored)
-        assert all(record["label"] in {"positive", "negative", "neutral"} for record in scored)
-        results.append([(record["label"], record["prob"]) for record in scored])
+        assert all(set(record["votes"]) == set(VOTE_IDS) for record in scored)
+        results.append([(record["votes"][OVERALL]["label"], record["votes"][OVERALL]["prob"]) for record in scored])
 
     assert results[0] == results[1]
