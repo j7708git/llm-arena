@@ -7,9 +7,11 @@
   "overall": {
    "accuracy": 0.8174,
    "constantNDBaseline": 0.0,
+   "discussedN": 115,
    "macroF1": 0.5706,
    "n": 115,
    "passed": true,
+   "verdict": "✅",
    "ece": 0.0804,
    "confidenceBands": [
     {
@@ -32,9 +34,11 @@
   "quality": {
    "accuracy": 0.7652,
    "constantNDBaseline": 0.7565,
+   "discussedN": 28,
    "macroF1": 0.4698,
    "n": 115,
-   "passed": false,
+   "passed": true,
+   "verdict": "✅ 勝過 baseline",
    "ece": 0.1217,
    "confidenceBands": [
     {
@@ -57,9 +61,11 @@
   "speed": {
    "accuracy": 0.9652,
    "constantNDBaseline": 0.9391,
+   "discussedN": 7,
    "macroF1": 0.5953,
    "n": 115,
    "passed": true,
+   "verdict": "⚠️ 樣本不足",
    "ece": 0.0109,
    "confidenceBands": [
     {
@@ -77,9 +83,11 @@
   "tokenEfficiency": {
    "accuracy": 0.9739,
    "constantNDBaseline": 0.9913,
+   "discussedN": 1,
    "macroF1": 0.2478,
    "n": 115,
    "passed": true,
+   "verdict": "⚠️ 樣本不足",
    "ece": 0.013,
    "confidenceBands": [
     {
@@ -97,9 +105,11 @@
   "tokenUsage": {
    "accuracy": 0.9913,
    "constantNDBaseline": 0.9826,
+   "discussedN": 2,
    "macroF1": 0.5556,
    "n": 115,
    "passed": true,
+   "verdict": "⚠️ 樣本不足",
    "ece": 0.0109,
    "confidenceBands": [
     {
@@ -122,9 +132,11 @@
   "priceValue": {
    "accuracy": 0.9739,
    "constantNDBaseline": 0.9217,
+   "discussedN": 9,
    "macroF1": 0.6797,
    "n": 115,
    "passed": true,
+   "verdict": "⚠️ 樣本不足",
    "ece": 0.0022,
    "confidenceBands": [
     {

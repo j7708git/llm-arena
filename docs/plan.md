@@ -198,7 +198,11 @@
   schema v1.2（`juryVotes`、`meta.judge.kind`）
 - **驗收**：`validate` 過新舊兩版 schema；對 sample.jsonl 真跑四人團回填 votes＋juryVotes；
   平手面向如實記 null；缺 `OPENROUTER_API_KEY` 時明確報錯；重跑同輸入 votes 一致（溫度 0）
-- gold 定案後另跑一次「評審團 vs gold」驗證（沿用 C5 門檻），結果寫 `docs/calibration-report.md`
+- gold 定案後另跑一次「評審團 vs gold」驗證，結果寫 `docs/calibration-report.md`。
+  **驗收門檻（owner 裁定 2026-09-30）**：overall ≥ 0.80；五面向改為「accuracy 須勝過
+  常數 not-discussed baseline」——絕對 0.80 對 not-discussed 佔九成的面向是誤導性指標
+  （全猜 not-discussed 即可得 ~0.9）。某面向「有討論的列數」< 10 時標『樣本不足』，
+  不得據以下結論；站方呈現須標註各面向可信度。
 
 ### A3 — schema v1.1 多維度改造（2026-09-29 新增，C4/C5 的前置）
 - `schema.py`：evidence 改 `votes` map、scores 改開放 `dimensions`＋`meta.dimensions/weights/sourcesCovered`
