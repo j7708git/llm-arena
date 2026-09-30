@@ -40,10 +40,7 @@
     "disclaimer": "社群聲量代理指標，非 benchmark",
     "judge": {                                 // C8 起改 LLM 評審團（laya 已淘汰，見待決事項）
       "kind": "llm-jury",
-      "members": [                             // 四家皆非 gold 標註家族外的重複（qwen3.7 為 owner 指定觀察員）
-        "deepseek/deepseek-v4.1-flash",
-        "z-ai/glm-5.3-flash",
-        "openai/gpt-6-luna",
+      "members": [                             // 2026-10-01 owner 裁定收斂為單一評審（原四人多數決）
         "qwen/qwen3.7-flash"
       ],
       "calibrated": false                      // gold 考卷驗證通過前如實 false
@@ -152,20 +149,20 @@
 11. **`data/evidence/` 只放真實蒐集資料**（PM 裁定，2026-09-29）：種子範例移至
     `data/samples/evidence.sample.jsonl`（站方開發/schema 示例用）。score/build 的
     預設 glob 只讀 `data/evidence/*.jsonl`，假資料不得混入聚合與溯源連結。
-12. **LLM 評審團契約（v1.2，2026-09-30 新增）**：
-    - 四位評審如 `meta.judge.members`；schemaVersion 升 1.2（`extra=forbid`，
-      舊 1.1 檔案的 `judge`/`juryVotes` 欄位差異由 validate 分版本處理）。
-    - 每位評審**獨立呼叫**（同 prompt、同 rubric、JSON 輸出），不得互看；
-      每面向取多數，`prob`=同票比例；**2/4 平手 → 該面向 label/prob 記 null**。
-    - `juryVotes.<facet>.<member短名>` 必須保留原始票；`judge` 欄位格式
-      `llm-jury@<membersHash前8碼>`（membersHash=members 排序後串接的 sha256）。
+12. **LLM 評審團契約（v1.2，2026-09-30 新增；2026-10-01 owner 裁定收斂單一評審）**：
+    - 評審成員：**`qwen/qwen3.7-flash` 單一評審**（gold v2 上單飛 0.852 並列第一、
+      過 0.80 門檻；成本 1/16）。多數決機制保留在程式中——未來要擴編只需改
+      `arena.jury.JURY_MEMBERS`。單一成員時 `prob` 恆為 1.0、無平手。
+    - `juryVotes.<facet>.<member短名>` 仍逐票保留；`judge` 欄位格式
+      `llm-jury@<membersHash 前 8 碼>`（membersHash=members 排序後串接的 sha256，
+      分隔字元 `\n`）。單一評審的 judge = `llm-jury@557e1059`。
+    - 每位評審**獨立呼叫**（同 prompt、同 rubric、JSON 輸出），不得互看。
+      （多數決規則——prob=同票比例、2/4 平手記 null——僅在成員數 >1 時適用。）
     - 呼叫走 OpenRouter `chat/completions`；**預設同步呼叫**（owner 裁定 2026-09-30，
       batch 非同步等太久）；`--batch` 可切 batch API（半價、24h 內回，實測小批次
       也要 ~8 分鐘/家）。API key 從環境變數
       `OPENROUTER_API_KEY` 讀；缺 key 時 score 明確報錯不靜默降級。
-    - 成本：四家一趟 ≈ $0.065（216 則 × 6 題，state~400/rubric~350/out~120 tok）。
-    - 動機：owner 計畫先四人團累積數據，之後收斂成單一評審——收斂依據 =
-      gold 考卷準確率＋與多數決的長期一致率（所以 `juryVotes` 不可省略）。
+    - 成本：單一評審一趟 ≈ $0.008（216 則 × 6 題，state~400/rubric~350/out~120 tok）。
 
 ## 任務拆分
 

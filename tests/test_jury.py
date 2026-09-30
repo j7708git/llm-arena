@@ -16,7 +16,6 @@ import pytest
 from arena import jury
 from arena.cli import build_parser, main
 from arena.jury import (
-    JURY_MEMBERS,
     JuryPredictor,
     OpenRouterChatClient,
     aggregate_member_labels,
@@ -34,8 +33,15 @@ from arena.validate import validate_path
 ROOT = Path(__file__).resolve().parents[1]
 SEED_EVIDENCE = ROOT / "data" / "samples" / "evidence.sample.jsonl"
 
-DEEPSEEK, GLM, GPT, QWEN = JURY_MEMBERS
-SHORT = {member: member_short_name(member) for member in JURY_MEMBERS}
+DEEPSEEK, GLM, GPT, QWEN = (
+    "deepseek/deepseek-v4.1-flash",
+    "z-ai/glm-5.3-flash",
+    "openai/gpt-6-luna",
+    "qwen/qwen3.7-flash",
+)
+# 測試用四人名單（驗多數決機制用；正式預設已收斂為單一評審，見 jury.JURY_MEMBERS）。
+TEST_MEMBERS = (DEEPSEEK, GLM, GPT, QWEN)
+SHORT = {member: member_short_name(member) for member in TEST_MEMBERS}
 
 
 # --- 工具 ---------------------------------------------------------------------
@@ -115,8 +121,8 @@ def _read(path: Path) -> list[dict]:
 
 
 def test_members_hash_is_order_independent_and_deterministic() -> None:
-    assert members_hash() == members_hash(reversed(JURY_MEMBERS))
-    assert members_hash() == members_hash(list(JURY_MEMBERS))
+    assert members_hash(TEST_MEMBERS) == members_hash(reversed(TEST_MEMBERS))
+    assert members_hash(TEST_MEMBERS) == members_hash(list(TEST_MEMBERS))
     assert len(members_hash()) == 64
 
 
@@ -192,7 +198,7 @@ def test_parse_member_labels_rejects_non_json() -> None:
 def _per_member(**by_member: str) -> dict[str, dict[str, str] | None]:
     """以成員短名或全名組出 per_member；值為 overall 標籤，其餘 not-discussed。"""
     result: dict[str, dict[str, str] | None] = {}
-    for member in JURY_MEMBERS:
+    for member in TEST_MEMBERS:
         short = member_short_name(member)
         if short in by_member:
             result[member] = _labels(overall=by_member[short])
@@ -203,7 +209,8 @@ def _per_member(**by_member: str) -> dict[str, dict[str, str] | None]:
 
 def test_majority_three_of_four_prob_075() -> None:
     outcome = aggregate_member_labels(
-        _per_member(**{SHORT[DEEPSEEK]: "positive", SHORT[GLM]: "positive", SHORT[GPT]: "positive"})
+        members=TEST_MEMBERS,
+        per_member=_per_member(**{SHORT[DEEPSEEK]: "positive", SHORT[GLM]: "positive", SHORT[GPT]: "positive"})
     )
     vote = outcome.votes[OVERALL_VOTE_ID]
     assert vote.label == "positive"
@@ -212,14 +219,16 @@ def test_majority_three_of_four_prob_075() -> None:
 
 def test_unanimous_prob_1() -> None:
     outcome = aggregate_member_labels(
-        _per_member(**{SHORT[m]: "negative" for m in JURY_MEMBERS})
+        members=TEST_MEMBERS,
+        per_member=_per_member(**{SHORT[m]: "negative" for m in TEST_MEMBERS})
     )
     assert outcome.votes[OVERALL_VOTE_ID] == Vote("negative", 1.0)
 
 
 def test_two_two_tie_is_null() -> None:
     outcome = aggregate_member_labels(
-        _per_member(
+        members=TEST_MEMBERS,
+        per_member=_per_member(
             **{SHORT[DEEPSEEK]: "positive", SHORT[GLM]: "positive",
                SHORT[GPT]: "negative", SHORT[QWEN]: "negative"}
         )
@@ -231,7 +240,8 @@ def test_two_two_tie_is_null() -> None:
 
 def test_two_one_one_picks_majority() -> None:
     outcome = aggregate_member_labels(
-        _per_member(
+        members=TEST_MEMBERS,
+        per_member=_per_member(
             **{SHORT[DEEPSEEK]: "positive", SHORT[GLM]: "positive",
                SHORT[GPT]: "negative", SHORT[QWEN]: "neutral"}
         )
@@ -240,10 +250,10 @@ def test_two_one_one_picks_majority() -> None:
 
 
 def test_none_vote_on_failed_member_makes_post_void() -> None:
-    per_member = _per_member(**{SHORT[m]: "positive" for m in JURY_MEMBERS})
+    per_member = _per_member(**{SHORT[m]: "positive" for m in TEST_MEMBERS})
     per_member[GLM] = None
 
-    outcome = aggregate_member_labels(per_member)
+    outcome = aggregate_member_labels(per_member, members=TEST_MEMBERS)
 
     assert outcome.votes is None
     # 失敗成員的票記 null，其餘保留。
@@ -255,10 +265,10 @@ def test_facet_with_no_valid_votes_is_null_while_post_scored() -> None:
     """成員都回覆成功、但某面向四票全缺 → 該面向 null，其餘照常（整則不算作廢）。"""
     per_member = {
         member: {facet: None for facet in VOTE_IDS} | {OVERALL_VOTE_ID: "positive"}
-        for member in JURY_MEMBERS
+        for member in TEST_MEMBERS
     }
 
-    outcome = aggregate_member_labels(per_member)
+    outcome = aggregate_member_labels(per_member, members=TEST_MEMBERS)
 
     assert outcome.votes is not None
     assert outcome.votes[OVERALL_VOTE_ID] == Vote("positive", 1.0)
@@ -270,7 +280,7 @@ def test_facet_with_no_valid_votes_is_null_while_post_scored() -> None:
 
 def _sync_replies(**by_short: str) -> dict[str, str]:
     replies = {}
-    for member in JURY_MEMBERS:
+    for member in TEST_MEMBERS:
         short = member_short_name(member)
         replies[member] = _labels_json(
             overall=by_short.get(short, "neutral"),
@@ -289,7 +299,8 @@ def test_sync_run_backfills_votes_juryvotes_and_judge(tmp_path: Path) -> None:
         QWEN: _labels_json(overall="negative", quality="negative"),
     }
     predictor = JuryPredictor(
-        _client(_sync_transport(replies, calls=calls)), use_batch=False
+        _client(_sync_transport(replies, calls=calls)), members=TEST_MEMBERS,
+        use_batch=False,
     )
 
     assert run(Namespace(files=[str(path)], force=False), predictor=predictor) == EXIT_OK
@@ -298,13 +309,13 @@ def test_sync_run_backfills_votes_juryvotes_and_judge(tmp_path: Path) -> None:
     assert record["votes"][OVERALL_VOTE_ID] == {"label": "positive", "prob": 0.75}
     assert record["votes"]["quality"] == {"label": "positive", "prob": 0.75}
     assert record["votes"]["speed"]["label"] == "not-discussed"
-    assert record["judge"] == jury_judge()
+    assert record["judge"] == jury_judge(TEST_MEMBERS)
     assert set(record["juryVotes"]) == set(VOTE_IDS)
     assert record["juryVotes"][OVERALL_VOTE_ID][SHORT[QWEN]] == "negative"
     # 獨立呼叫：四位各一次、同一 prompt、溫度 0、只帶貼文。
     assert len(calls) == 4
     assert all(body["temperature"] == 0 for body in calls)
-    assert all(body["model"] in JURY_MEMBERS for body in calls)  # 同步版無 :batch
+    assert all(body["model"] in TEST_MEMBERS for body in calls)  # 同步版無 :batch
     assert all("score me" in body["messages"][1]["content"] for body in calls)
     assert all("vendor/m" not in json.dumps(body) for body in calls)
     # 產出必須是合法 v1.2 evidence。
@@ -314,7 +325,8 @@ def test_sync_run_backfills_votes_juryvotes_and_judge(tmp_path: Path) -> None:
 def test_sync_run_is_idempotent_and_does_not_call_again(tmp_path: Path) -> None:
     path = _write(tmp_path / "e.jsonl", [_record(text="once")])
     predictor = JuryPredictor(
-        _client(_sync_transport(_sync_replies())), use_batch=False
+        _client(_sync_transport(_sync_replies())), use_batch=False,
+        members=TEST_MEMBERS,
     )
     assert run(Namespace(files=[str(path)]), predictor=predictor) == EXIT_OK
     first = path.read_bytes()
@@ -336,7 +348,8 @@ def test_reproducible_for_fixed_inputs(tmp_path: Path) -> None:
         directory.mkdir()
         path = _write(directory / "e.jsonl", records)
         predictor = JuryPredictor(
-            _client(_sync_transport(_sync_replies())), use_batch=False
+            _client(_sync_transport(_sync_replies())), use_batch=False,
+            members=TEST_MEMBERS,
         )
         assert run(Namespace(files=[str(path)]), predictor=predictor) == EXIT_OK
         outputs.append([json.dumps(record, ensure_ascii=False) for record in _read(path)])
@@ -348,7 +361,8 @@ def test_force_with_laya_style_predictor_removes_jury_votes(tmp_path: Path) -> N
     """重評（force）換回無 jury 的預測器時，舊 juryVotes 要清掉（schema extra=forbid）。"""
     path = _write(tmp_path / "e.jsonl", [_record(text="rescore")])
     jury_predictor = JuryPredictor(
-        _client(_sync_transport(_sync_replies())), use_batch=False
+        _client(_sync_transport(_sync_replies())), use_batch=False,
+        members=TEST_MEMBERS,
     )
     assert run(Namespace(files=[str(path)]), predictor=jury_predictor) == EXIT_OK
     assert "juryVotes" in _read(path)[0]
@@ -380,8 +394,9 @@ def test_two_two_tie_written_as_null_and_still_valid(tmp_path: Path) -> None:
         QWEN: _labels_json(overall="negative"),
     }
     predictor = JuryPredictor(
-        _client(_sync_transport(replies)), use_batch=False
-    )
+        _client(_sync_transport(replies)), use_batch=False,
+        members=TEST_MEMBERS,
+        )
 
     assert run(Namespace(files=[str(path)]), predictor=predictor) == EXIT_OK
 
@@ -402,7 +417,9 @@ def test_member_failure_voids_post_and_reports_to_stderr(
             return httpx.Response(500, json={"error": "boom"})
         return _chat_response(_labels_json(overall="positive"))
 
-    predictor = JuryPredictor(_client(httpx.MockTransport(handler)), use_batch=False)
+    predictor = JuryPredictor(
+        _client(httpx.MockTransport(handler)), use_batch=False, members=TEST_MEMBERS,
+    )
 
     assert run(Namespace(files=[str(path)]), predictor=predictor) == EXIT_OK
 
@@ -474,7 +491,8 @@ def test_batch_run_uses_batch_models_and_backfills(tmp_path: Path) -> None:
         QWEN: _labels_json(overall="positive"),  # 無 batch 版用原價
     }
     predictor = JuryPredictor(
-        _client(_batch_transport(replies, record=posted)), use_batch=True
+        _client(_batch_transport(replies, record=posted)), members=TEST_MEMBERS,
+        use_batch=True,
     )
 
     assert run(Namespace(files=[str(path)]), predictor=predictor) == EXIT_OK
@@ -721,7 +739,7 @@ def test_real_jury_scores_sample(tmp_path: Path) -> None:
     assert run(Namespace(files=[str(path)])) == EXIT_OK  # 預設同步
 
     for record in _read(path):
-        assert record["judge"] == jury_judge()
+        assert record["judge"] == jury_judge(TEST_MEMBERS)
         assert validate_path(path) == []
         if record["votes"] is not None:
             assert set(record["votes"]) == set(VOTE_IDS)

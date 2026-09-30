@@ -66,7 +66,11 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
   tokenUsage 2／priceValue 9 皆屬此類，呈現須標可信度）。新門檻下總判定 ✅ 過關。
   quality 是唯一有足夠樣本（28 列）且勝過 baseline 的面向（0.7652 vs 0.7565）——
   未來若要加強，收集「有聊智能品質」的貼文最能補強該面向。
-- **單一評審收斂**：juryVotes 逐票數據累積中，等一致率樣本夠多再評估 qwen3.7-flash 單飛
+- **單一評審收斂（已裁定並執行 2026-10-01）**：owner 選擇 A——`arena score` 改由
+  **qwen3.7-flash 單飛**（judge=`llm-jury@557e1059`）。依據：gold v2 上單飛 0.852
+  並列第一、過 0.80 門檻，成本 1/16。多數決機制保留（改 `JURY_MEMBERS` 即可擴編）。
+  但書：qwen3.8-flash 是 gold 標註者之一（同家族風險）；且僅一次考試樣本——
+  未來每次跑分持續觀察，若準確率跌破門檻再議擴編。
 - 排程頻率（每日／每週）未定；`meta.judge.calibrated` 已改 `true`（owner 認可
   2026-09-30，plan.md 裁定 5）——`build.py` 預設值已同步改 `true`，重跑 build 不會回退
 - C2 歸屬漏洞：清單外新模型（Astra／Fable／Luna…）的貼文會進池，清單要定期擴充或
