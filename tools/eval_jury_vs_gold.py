@@ -98,10 +98,12 @@ def main() -> int:
         "",
         f"- gold 列數：{len(gold_rows)}；實際可比對：{len(pairs)}；缺分/未評分：{missing}",
         f"- judge：`{report['judge']}`",
-        f"- 門檻：accuracy ≥ 0.80（C5）",
+        "- 門檻（owner 裁定 2026-09-30）：overall ≥ 0.80；五面向改為「accuracy 須勝過"
+        "常數 not-discussed baseline」，且「有討論的列數」< 10 的面向標『樣本不足』"
+        "（一兩列之差純屬雜訊，不得據以下結論），呈現時須標註面向可信度。",
         "",
-        "| 面向 | accuracy | 常數ND baseline | macro-F1 | n | 判定 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| 面向 | accuracy | 常數ND baseline | 有討論n | macro-F1 | n | 判定 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     passed_all = True
     for facet in FACETS:
@@ -115,19 +117,33 @@ def main() -> int:
         n = len(golds)
         acc = sum(1 for g, p in zip(golds, preds) if g == p) / n if n else 0.0
         baseline = sum(1 for g in golds if g == "not-discussed") / n if n else 0.0
+        discussed_n = sum(1 for g in golds if g != "not-discussed")
         f1 = macro_f1(golds, preds)
-        passed = acc >= 0.80
+        if facet == "overall":
+            passed = acc >= 0.80
+            verdict = "✅" if passed else "❌"
+        elif discussed_n < 10:
+            passed = True  # 不构成失败，但如实标注样本不足
+            verdict = "⚠️ 樣本不足"
+        elif acc > baseline:
+            passed = True
+            verdict = "✅ 勝過 baseline"
+        else:
+            passed = False
+            verdict = "❌ 未勝過 baseline"
         passed_all = passed_all and passed
         report["facets"][facet] = {
             "accuracy": round(acc, 4),
             "constantNDBaseline": round(baseline, 4),
+            "discussedN": discussed_n,
             "macroF1": round(f1, 4),
             "n": n,
             "passed": passed,
+            "verdict": verdict,
         }
         lines.append(
-            f"| {facet} | {acc:.4f} | {baseline:.4f} | {f1:.4f} | {n} | "
-            f"{'✅' if passed else '❌'} |"
+            f"| {facet} | {acc:.4f} | {baseline:.4f} | {discussed_n} | {f1:.4f} | {n} | "
+            f"{verdict} |"
         )
 
     # overall 混淆矩陣（未作答併入 no_answer 欄）
@@ -188,11 +204,12 @@ def main() -> int:
 
     lines += [
         "",
-        f"## 總判定：{'✅ 全部過線' if passed_all else '❌ 有面向未達 0.80'}",
+        f"## 總判定：{'✅ 過關（overall ≥ 0.80，各面向勝過或持平於常數 baseline）' if passed_all else '❌ 未達門檻'}",
         "",
         "> 注意：gold 由四家真實 LLM（qwen3.8-flash／mimo-v2.6-flash／minimax-m3／",
         "> nemotron-3.5-lightning）逐則 API 標註、≥3/4 多數成 gold，無人類 ground truth。",
         "> 評審團 prob 只有 {1.0, 0.75} 兩個值，ECE 僅供參考。",
+        "> 「有討論 n」過小的面向（<10）無法有意義地評比，呈現時必須標註可信度不足。",
     ]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text("\n".join(lines) + "\n", encoding="utf-8")

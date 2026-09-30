@@ -60,12 +60,14 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
 
 ## 5. 進行中／待決
 
-- **面向門檻設計**（需 owner 拍板）：quality 0.7652 < 0.80，且各面向僅微幅勝過常數
-  baseline——選項 (a) 門檻改「勝過常數 baseline」、(b) 接受現狀並在榜單標註面向可信度、
-  (c) 針對 quality 補標註／調 rubric（成本高）
+- **面向門檻設計（已裁定 2026-09-30）**：overall ≥ 0.80；五面向改「accuracy 須勝過常數
+  ND baseline」，有討論列數 <10 的面向標『樣本不足』（speed 7／tokenEfficiency 1／
+  tokenUsage 2／priceValue 9 皆屬此類，呈現須標可信度）。新門檻下總判定 ✅ 過關。
+  quality 是唯一有足夠樣本（28 列）且勝過 baseline 的面向（0.7652 vs 0.7565）——
+  未來若要加強，收集「有聊智能品質」的貼文最能補強該面向。
 - **單一評審收斂**：juryVotes 逐票數據累積中，等一致率樣本夠多再評估 qwen3.7-flash 單飛
-- 排程頻率（每日／每週）未定；`meta.judge.calibrated` 仍 `false`（overall 過線但
-  quality 未過——維持 false 直到 owner 裁定門檻設計）
+- 排程頻率（每日／每週）未定；`meta.judge.calibrated` 維持 `false`，待 owner 認可新
+  門檻下的驗證結果後再改 `true`（plan.md 裁定 5）
 - C2 歸屬漏洞：清單外新模型（Astra／Fable／Luna…）的貼文會進池，清單要定期擴充或
   collect 端加黑名單——尚未開任務卡
 - jason-lab 端尚未動工；`data/scores.json`（真資料版）＋種子 `data/samples/` 都是它可用的開發資料
