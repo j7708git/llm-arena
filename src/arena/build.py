@@ -350,8 +350,9 @@ def build_document(
         "judge": {
             "kind": "llm-jury",
             "members": list(JURY_MEMBERS),
-            # gold 考卷驗證通過前一律 false（不得謊稱）。
-            "calibrated": False,
+            # gold v2 驗證過關（overall 0.8174 ≥ 0.80，見 docs/calibration-report.md），
+            # owner 認可 2026-09-30 後改 true（plan.md 裁定 5）。
+            "calibrated": True,
         },
         "dimensions": [
             {"id": facet, "label": DIMENSION_LABELS[facet]}

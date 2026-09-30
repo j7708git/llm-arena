@@ -13,7 +13,7 @@
         "openai/gpt-6-luna",
         "qwen/qwen3.7-flash"
       ],
-      "calibrated": false
+      "calibrated": true
     },
     "dimensions": [
       {

@@ -189,8 +189,9 @@
 ### C3 — score ✅（overall 總評完成；多維度升級見 A3）
 - 快層：JEV 逐則分類 + 校準機率（laya、`answer_confidence`，見 `docs/research/jev-scoring.md`）
 - **驗收**：對固定輸入集重跑，分數變動在容許範圍內（可重現）——已達（2308e40）
-- **⚠️ 2026-09-30 裁定：laya 淘汰**（gold 上 0.4424，官方同族任務 self-eval 0.442，
-  domain fit 問題，見 `docs/research/laya-usage-accuracy.md`）。C3 的 laya 實作保留
+- **⚠️ 2026-09-30 裁定：laya 淘汰**（在後經查作廢的舊 gold 上 0.4424；官方同族任務
+  self-eval 0.442，domain fit 問題，見 `docs/research/laya-usage-accuracy.md`）。
+  此 0.4424 與新 gold 上的評審團成績（0.8174）沒有直接對比。C3 的 laya 實作保留
   在 git 歷史，score 改接 C8 評審團。
 
 ### C8 — LLM 評審團 judge（2026-09-30 新增，取代 C3 的 laya）
@@ -238,7 +239,8 @@
 - [x] JEV 具體選用（R1 定案 2026-09-29）：**`convaiinnovations/laya` 英文 checkpoint**，
       pin revision `55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851`，`choice` 題型三類態度，
       校準機率用 `answer_confidence`。詳見 `docs/research/jev-scoring.md`。
-      **→ 2026-09-30 淘汰**：C5 gold 上 0.4424、官方 self-eval 同族 0.442（domain fit），
+      **→ 2026-09-30 淘汰**：在後經查作廢的舊 gold 上 0.4424、官方 self-eval 同族
+      0.442（domain fit；與新 gold 上的評審團成績沒有直接對比），
       見 `docs/research/laya-usage-accuracy.md`。
 - [x] judge 具體選用（2026-09-30 定案）：**LLM 四人評審團**（deepseek-v4.1-flash /
       glm-5.3-flash / gpt-6-luna / qwen3.7-flash，全 `:batch`；qwen3.7 為 owner 指定

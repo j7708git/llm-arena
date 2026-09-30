@@ -60,7 +60,8 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 
 # 模型與評分常數（R1 筆記「具體選型參數」）。
-# DEPRECATED（C8，2026-09-30）：laya 在 gold 上 0.4424、domain fit 問題，score 已改接
+# DEPRECATED（C8，2026-09-30）：laya 在（後經查作廢的）舊 gold 上 0.4424、domain fit
+# 問題，score 已改接
 # LLM 評審團（arena.jury）。以下常數與 LayaPredictor 保留供回溯與舊測試，勿用於新流程。
 MODEL_ID = "convaiinnovations/laya"
 REVISION = "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"

@@ -458,7 +458,8 @@ modal run modal_app.py::encoder --model microsoft/deberta-v3-large --lr 5e-5 --e
 
 - 五個面向：全部猜 `not-discussed`。
   【推論】依 progress-status「gold 約 9 成面向是 not-discussed」，這個常數預測的
-  面向準確率約 **0.90**——**比 laya 的 0.4424 高一倍**，也高於 C5 的 0.80 門檻。
+  面向準確率約 **0.90**——也高於 C5 的 0.80 門檻。（laya 的 0.4424 量自後來
+  作廢的舊 gold，此對比僅供背景參考，與本預估沒有直接對比。）
   `overall` 另算多數類基線。
 - 產出：per-qid 的 majority-class accuracy、macro-F1、以及「laya vs 常數 baseline」的
   McNemar 檢定。**若 laya 贏不過常數 baseline，acc-based 門檻 0.80 本身就是誤導性指標**，
