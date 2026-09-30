@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
@@ -419,12 +420,14 @@ class JuryPredictor:
         use_batch: bool = True,
         poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
         batch_timeout: float = DEFAULT_BATCH_TIMEOUT_SECONDS,
+        sync_workers: int = 8,
     ) -> None:
         self.client = client
         self.members = tuple(members)
         self.use_batch = use_batch
         self.poll_interval = poll_interval
         self.batch_timeout = batch_timeout
+        self.sync_workers = max(1, sync_workers)
         self.judge = jury_judge(self.members)
         self.stats: dict[str, int] = {
             "member_failures": 0,
@@ -478,23 +481,42 @@ class JuryPredictor:
         messages: Sequence[Sequence[Mapping[str, str]]],
         per_state: list[dict[str, Mapping[str, str | None] | None]],
     ) -> None:
-        for member in self.members:
-            self._sync_member(member, messages, per_state)
+        with ThreadPoolExecutor(max_workers=self.sync_workers) as pool:
+            for member in self.members:
+                self._sync_member(member, messages, per_state, pool=pool)
 
     def _sync_member(
         self,
         member: str,
         messages: Sequence[Sequence[Mapping[str, str]]],
         per_state: list[dict[str, Mapping[str, str | None] | None]],
+        *,
+        pool: ThreadPoolExecutor | None = None,
     ) -> None:
-        """單一成員的同步逐則呼叫（``_classify_sync`` 與 batch 模式的退回路徑共用）。"""
+        """單一成員的同步逐則呼叫（``_classify_sync`` 與 batch 模式的退回路徑共用）。
+
+        ``pool`` 提供時逐則並行（I/O bound；推理模型單呼叫可達數十秒，
+        序列跑 216 則要數小時——2026-09-30 owner 因速度裁定改並行）。
+        """
         model = api_model_id(member, use_batch=False)
-        for index, message in enumerate(messages):
+
+        def work(index: int) -> tuple[int, dict[str, str | None] | None, str | None]:
             try:
-                content = self.client.chat_completion(model, message)
-                labels = parse_member_labels(content)
-            except (JuryCallError, ValueError):
+                content = self.client.chat_completion(model, messages[index])
+                return index, parse_member_labels(content), None
+            except (JuryCallError, ValueError) as exc:
+                return index, None, str(exc)
+
+        if pool is not None:
+            results = list(pool.map(work, range(len(messages))))
+        else:
+            results = [work(index) for index in range(len(messages))]
+
+        for index, labels, error in results:
+            if labels is None:
                 self.stats["member_failures"] += 1
+                if error:
+                    self.last_errors.append(f"[{member}] p{index}: {error}")
                 per_state[index][member] = None
                 continue
             self._record_parse(labels)

@@ -29,9 +29,9 @@ from arena.cli import main
 from arena.schema import FACET_DIMENSION_IDS, OVERALL_VOTE_ID
 from arena.validate import validate_path
 
-# evidence 檔實際寫的 judge 是短 sha；build 也要接受完整 sha。
-SHORT_JUDGE = f"{build.JUDGE_MODEL}@{build.JUDGE_REVISION[:7]}"
-FULL_JUDGE = f"{build.JUDGE_MODEL}@{build.JUDGE_REVISION}"
+# evidence 檔實際寫的 judge 是 llm-jury@<hash>（C8 起）；舊 laya judge 一律不算。
+SHORT_JUDGE = build.JURY_JUDGE_ID
+FULL_JUDGE = build.JURY_JUDGE_ID
 FACETS = FACET_DIMENSION_IDS
 
 
