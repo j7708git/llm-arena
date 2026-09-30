@@ -22,11 +22,11 @@
 
 1. **模型清單**：以人工維護清單為主，附掛 OpenRouter 公開 API `https://openrouter.ai/api/v1/models` 的定價與 context length（用 API，不爬 HTML）。
 2. **社群收集**：排程 agent 使用 `last30days` 技能抓近 30 天社群討論（Reddit／HN／X）。
-3. **評分（LLM 四人評審團）**：四位 LLM（deepseek-v4.1-flash／glm-5.3-flash／
-   gpt-6-luna／qwen3.7-flash，皆經 OpenRouter）對逐則貼文**獨立**回答六題
-   （overall＋五面向、溫度 0），每面向取多數決；`prob`＝同票比例（4/4→1.0、
-   3/4→0.75），2/4 平手的面向記 `null`（資料不足）。原始票保留在 `juryVotes`，
-   供日後收斂單一評審用。
+3. **評分（LLM 單一評審）**：`qwen3.7-flash`（經 OpenRouter）對逐則貼文**一次**回答
+   六題（overall＋五面向、溫度 0、JSON 輸出）。
+   歷史：初版為四人評審團多數決，2026-10-01 owner 裁定收斂為單一評審——
+   qwen3.7-flash 在 gold v2 上單飛 0.852（並列第一、過 0.80 門檻），成本降為 1/16。
+   多數決機制保留在程式中（`arena.jury.JURY_MEMBERS` 改一行即可擴編）。
 
    > 初版評分器 `laya`（JEV 家族小模型）已於 2026-09-30 淘汰：它在 gold 考卷上
    > 只有 0.4424，對這種語意判斷明顯不準確（domain fit 問題）。研究與淘汰理由見
@@ -38,7 +38,7 @@
 
 > 這是**社群聲量代理指標，不是 benchmark**。所有呈現都必須標明這點。
 
-## 上線門檻（2026-09-30 已達成）
+## 上線門檻（2026-09-30 達成、2026-10-01 裁定修正）
 
 - [x] ground truth（gold v2）：四家真 LLM 逐則 API 標註、≥3/4 多數定案 117 列；
       評審團 vs gold：overall **0.8174** 過關（門檻 0.80），報告見
@@ -47,6 +47,9 @@
 - [x] 偏袒防護：評審團成員刻意避開 gold 標註的模型家族；「社群聲量代理指標、
       非 benchmark」的定位以 `meta.disclaimer` 全程標示。（原構想的「送評前遮蔽
       模型名稱」未實作——貼文文字天然含模型名，改倚賴多數決與上述定位標示）
+- [x] 面向驗收門檻（owner 裁定 2026-10-01）：五面向改比「accuracy 勝過常數
+      not-discussed baseline」（not-discussed 佔九成時絕對 0.80 是誤導性指標）；
+      有討論列數 <10 的面向標『樣本不足』，站方呈現須標註各面向可信度。
 
 ## 目錄結構
 
@@ -62,7 +65,7 @@ docs/              plan.md、annotation-guide.md、research/
 ```bash
 arena fetch-models   # 更新模型清單與定價
 arena collect        # 抓取社群貼文（排程執行）
-arena score          # LLM 四人評審團逐則評分（多數決）
+arena score          # LLM 評審（qwen3.7-flash）逐則評分
 arena build          # 產出 data/scores.json
 arena validate       # 檢查資料是否符合 schema
 ```
@@ -105,11 +108,12 @@ ARENA_EVIDENCE_FILES=data/evidence/2026-09-29.jsonl .venv/bin/arena score
 .venv/bin/arena score --force
 ```
 
-評分結果把 `votes`（六題多數決）、`juryVotes`（四位評審的原始票）與
-`judge`（`llm-jury@<membersHash 前 8 碼>`）回填進 evidence。輸出採**原子寫入**
-（先寫同目錄暫存檔再 rename），中途失敗不會留下半截 jsonl；已有 `votes` 的行
-會跳過，因此可重複執行。四家跑完全池（216 則 × 6 題）成本約 $0.13。
-成員名單與評審團契約見 `docs/plan.md` 實作裁定 12。
+評分結果把 `votes`（六題標籤）、`juryVotes`（評審的原始票，現為單一評審）與
+`judge`（`llm-jury@<membersHash 前 8 碼>`，現為 `llm-jury@557e1059`）回填進
+evidence。輸出採**原子寫入**（先寫同目錄暫存檔再 rename），中途失敗不會留下
+半截 jsonl；已有 `votes` 的行會跳過，因此可重複執行。單一評審跑完全池
+（216 則 × 6 題）成本約 **$0.008**（原四人多數決為 $0.13）。
+評審名單與契約見 `docs/plan.md` 實作裁定 12。
 
 > 舊評分器 `laya`（JEV 家族、CPU 本地推論）的安裝與調校說明已隨其淘汰移除；
 > 歷史選型理由與坑清單保留在 `docs/research/jev-scoring.md` 與
@@ -117,12 +121,12 @@ ARENA_EVIDENCE_FILES=data/evidence/2026-09-29.jsonl .venv/bin/arena score
 
 ### 資料契約（schema v1.2）
 
-evidence 的每則貼文以 `votes` 記錄評審團的**多數決結果**（六題：`overall` 總評＋
+evidence 的每則貼文以 `votes` 記錄評審的**判定結果**（六題：`overall` 總評＋
 五個面向 `quality`／`speed`／`tokenEfficiency`／`tokenUsage`／`priceValue`），
-每題 `{label, prob}`；`prob`＝同票比例（4/4→1.0、3/4→0.75），**2/4 平手的面向
-`label`／`prob` 皆為 `null`**（視同資料不足，build 自動排除）。每位評審的原始票
-保留在 `juryVotes.<面向>.<評審短名>`。未評分時 `votes`／`juryVotes`／`judge`
-為 `null`，結構仍合法。
+每題 `{label, prob}`。**現行為單一評審，`prob` 恆為 `1.0`**；若未來擴編為多評審，
+`prob`＝同票比例、票數相同（平手）的面向 `label`／`prob` 為 `null`（視同資料不足，
+build 自動排除）。評審的原始票保留在 `juryVotes.<面向>.<評審短名>`。未評分時
+`votes`／`juryVotes`／`judge` 為 `null`，結構仍合法。
 
 rubric（題目文字見 `src/arena/score.py` 的 `QUESTION`；`overall` 用 positive／negative／
 neutral，五個面向用 positive／negative／`not-discussed`）：
