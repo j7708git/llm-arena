@@ -1,0 +1,349 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "llm-arena 資料管線：從社群收集到評分榜單",
+    "output": "docs/architecture.html",
+    "viewBox": [
+      1080,
+      660
+    ],
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "dashed": {
+          "label": "尚未完成／把關流程",
+          "visible": true
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "資料來源"
+    },
+    {
+      "label": "收集"
+    },
+    {
+      "label": "清單・證據・評分"
+    },
+    {
+      "label": "聚合與校準"
+    },
+    {
+      "label": "產出與消費"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "openrouter",
+      "type": "external",
+      "label": "OpenRouter",
+      "sublabel": "chat/completions API",
+      "stage": 0,
+      "row": 0,
+      "tag": "外部 API",
+      "width": 136
+    },
+    {
+      "id": "reddit",
+      "type": "external",
+      "label": "Reddit",
+      "sublabel": "公開 API 補缺 author",
+      "stage": 0,
+      "row": 1,
+      "tag": "82 筆"
+    },
+    {
+      "id": "hn",
+      "type": "external",
+      "label": "Hacker News",
+      "sublabel": "Algolia API",
+      "stage": 0,
+      "row": 2,
+      "tag": "77 筆"
+    },
+    {
+      "id": "x",
+      "type": "external",
+      "label": "X（Twitter）",
+      "sublabel": "last30days 引擎",
+      "stage": 0,
+      "row": 3,
+      "tag": "57 筆"
+    },
+    {
+      "id": "fetch-models",
+      "type": "backend",
+      "label": "arena fetch-models",
+      "sublabel": "人工清單＋定價合併",
+      "stage": 1,
+      "row": 0,
+      "tag": "C1",
+      "width": 136
+    },
+    {
+      "id": "collect",
+      "type": "backend",
+      "label": "arena collect",
+      "sublabel": "last30days · 去重 · 三態歸屬",
+      "stage": 1,
+      "row": 2,
+      "tag": "C2/C6",
+      "width": 136
+    },
+    {
+      "id": "modelsdb",
+      "type": "database",
+      "label": "data/models.json",
+      "sublabel": "8 模型 · 定價／context",
+      "stage": 2,
+      "row": 0,
+      "tag": "硬資料"
+    },
+    {
+      "id": "score",
+      "type": "backend",
+      "label": "arena score",
+      "sublabel": "LLM 四人評審團 · 多數決",
+      "stage": 2,
+      "row": 1,
+      "tag": "C8"
+    },
+    {
+      "id": "evidence",
+      "type": "database",
+      "label": "data/evidence/*.jsonl",
+      "sublabel": "216 筆真貼文 · votes",
+      "stage": 2,
+      "row": 2,
+      "tag": "證據池",
+      "width": 152
+    },
+    {
+      "id": "build",
+      "type": "backend",
+      "label": "arena build",
+      "sublabel": "K=10 收縮 ＋ Wilson 下界",
+      "stage": 3,
+      "row": 1,
+      "tag": "C4"
+    },
+    {
+      "id": "goldv2",
+      "type": "database",
+      "label": "gold-v2.jsonl",
+      "sublabel": "四家真 LLM 標註 · ≥3/4 多數",
+      "stage": 3,
+      "row": 3,
+      "tag": "117 列",
+      "width": 136
+    },
+    {
+      "id": "scores",
+      "type": "database",
+      "label": "data/scores.json",
+      "sublabel": "schema v1.2 · calibrated=false",
+      "stage": 4,
+      "row": 1,
+      "tag": "榜單",
+      "width": 152
+    },
+    {
+      "id": "jasonlab",
+      "type": "frontend",
+      "label": "jason-lab 網站",
+      "sublabel": "datatable 呈現榜單",
+      "stage": 4,
+      "row": 3,
+      "tag": "尚未動工"
+    }
+  ],
+  "flows": [
+    {
+      "id": "or-models",
+      "from": "openrouter",
+      "to": "fetch-models",
+      "label": "模型清單＋定價",
+      "classification": "唯讀 API",
+      "labelAt": [
+        196,
+        110
+      ]
+    },
+    {
+      "id": "reddit-in",
+      "from": "reddit",
+      "to": "collect",
+      "label": "貼文",
+      "classification": "近 30 天",
+      "labelAt": [
+        185,
+        271
+      ]
+    },
+    {
+      "id": "hn-in",
+      "from": "hn",
+      "to": "collect",
+      "label": "討論帖",
+      "classification": "近 30 天",
+      "labelAt": [
+        185,
+        401
+      ]
+    },
+    {
+      "id": "x-in",
+      "from": "x",
+      "to": "collect",
+      "label": "貼文",
+      "classification": "近 30 天",
+      "via": [
+        [
+          220,
+          499
+        ],
+        [
+          220,
+          385
+        ]
+      ],
+      "labelAt": [
+        186,
+        499
+      ]
+    },
+    {
+      "id": "models-to-build",
+      "from": "fetch-models",
+      "to": "modelsdb",
+      "label": "合併落地",
+      "classification": "冪等重跑"
+    },
+    {
+      "id": "modelsdb-build",
+      "from": "modelsdb",
+      "to": "build",
+      "label": "定價 priceUsdPerMTok",
+      "classification": "硬資料"
+    },
+    {
+      "id": "collect-evidence",
+      "from": "collect",
+      "to": "evidence",
+      "label": "evidence jsonl",
+      "classification": "去重＋歸屬後",
+      "variant": "emphasis",
+      "labelAt": [
+        419,
+        428
+      ]
+    },
+    {
+      "id": "or-jury",
+      "from": "openrouter",
+      "to": "score",
+      "label": "四位評審獨立呼叫",
+      "classification": "同步 · 溫度 0",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          220,
+          157
+        ],
+        [
+          220,
+          271
+        ]
+      ]
+    },
+    {
+      "id": "score-back",
+      "from": "score",
+      "to": "evidence",
+      "label": "回填 votes",
+      "classification": "逐則送審 · 多數決＋juryVotes",
+      "labelAt": [
+        530,
+        328
+      ]
+    },
+    {
+      "id": "evidence-build",
+      "from": "evidence",
+      "to": "build",
+      "label": "讀 votes 聚合",
+      "classification": "分數由公式算",
+      "variant": "emphasis"
+    },
+    {
+      "id": "build-scores",
+      "from": "build",
+      "to": "scores",
+      "label": "加權總分",
+      "classification": "通過 arena validate",
+      "route": "straight",
+      "labelAt": [
+        790,
+        314
+      ]
+    },
+    {
+      "id": "evidence-gold",
+      "from": "evidence",
+      "to": "goldv2",
+      "label": "calibrate 抽樣",
+      "classification": "四家標註 LLM 重標",
+      "variant": "dashed"
+    },
+    {
+      "id": "gold-gate",
+      "from": "goldv2",
+      "to": "scores",
+      "label": "overall 0.817 ✅",
+      "classification": "評審團 vs gold",
+      "variant": "dashed"
+    },
+    {
+      "id": "scores-lab",
+      "from": "scores",
+      "to": "jasonlab",
+      "label": "榜單資料",
+      "classification": "契約 v1.2",
+      "labelAt": [
+        960,
+        314
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "主路徑（已全部完成）",
+      "items": [
+        "Reddit／HN／X 近 30 天貼文，去重＋三態歸屬後進 216 筆證據池",
+        "四人評審團多數決回填 votes，build 以 K=10 收縮公式產出 v1.2 榜單"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "品質把關（校準迴路）",
+      "items": [
+        "gold 考卷由四家真 LLM 重標（regex 冒名版已作廢）；評審團 overall 0.817 過關",
+        "舊 judge（laya）0.442 已淘汰；報告見 docs/calibration-report.md"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "尚未完成",
+      "items": [
+        "calibrated=false 待 owner 認可；排程頻率（每日／每週）未定",
+        "jason-lab 未動工；qwen3.7-flash 單飛評估等一致率數據累積"
+      ]
+    }
+  ]
+}
