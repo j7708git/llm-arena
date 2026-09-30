@@ -1,8 +1,9 @@
-# llm-arena 進度交接單（2026-09-29 19:20，PM 產出）
+# llm-arena 進度交接單（2026-09-30，PM 更新——C8 完成、gold v2 定案、驗證有結果）
 
 > 用途：供後續 agent session（研究／實作／交接）快速接手。
-> 權威文件：`docs/plan.md`（契約 v1.1＋裁定）、`docs/annotation-guide.md`（v1.2）、
-> `docs/research/*.md`（R1/R2/R3）。本單只是快照，與 plan.md 衝突時以 plan.md 為準。
+> 權威文件：`docs/plan.md`（契約 v1.2＝LLM 評審團，裁定第 12 條）、
+> `docs/annotation-guide.md`（v1.2）、`docs/research/*.md`、`docs/calibration-report.md`（新）。
+> 本單只是快照，與 plan.md 衝突時以 plan.md 為準。
 
 ## 1. 管線狀態（全部 commit，工作樹髒的只有進行中的標註檔）
 
@@ -19,60 +20,55 @@
 全部已帶 laya votes。榜單 `data/scores.json` 是 laya votes 的聚合——**若 judge 換人，重跑
 `arena score`＋`arena build` 即可，聚合公式不動**。
 
-## 2. C5 校準：目前的判決與數據（重要）
+## 2. C5 校準：C8 評審團驗證結果（2026-09-30，gold v2 定案）
 
-考卷（gold）產生方式：4 個不同家族 flash 模型（qwen3.8-flash／mimo-v2.6-flash／
-minimax-m3／nemotron-3.5）獨立標 150 筆 → 每面向 ≥3/4 多數成 gold。owner 已拍板
-**不做人類抽檢**（報告需如實寫「無人類 ground truth」）。
+**gold v2 出身聲明**：第一輪「四家標註」被發現部分出自 regex 腳本冒名（annotate.py）或
+session 手寫判斷表，**已全部作廢重做**——四家真 LLM（qwen3.8-flash／mimo-v2.6-flash／
+minimax-m3／nemotron-3.5-lightning）逐則 API 標註、溫度 0、v1.2 規則，≥3/4 多數成 gold，
+117 列定案（33 列平手/缺答案記 ambiguous）。出身可重現：`tools/annotate_gold.py`＋API 帳單。
 
-laya 成績（n=110 preview，`/tmp/opencode/llm-arena-c6/preview-evals.json`）：
+評審團（`llm-jury@cd50a7e9`）vs gold（n=115，詳 `docs/calibration-report.md`）：
 
 ```
-choice_accuracy 0.4424（門檻 0.80）FAIL
-ece             0.1342（門檻 0.10）FAIL
-各面向 acc：priceValue .69／overall .60／tokenEfficiency .46／quality .39／speed .26／tokenUsage .25
-信心分帶：facets conf≥0.75 的 accuracy=0.29 < 低信心組 0.43 → 信心與正確率「倒掛」，gating 不可用
-來源切片：reddit .45／hn .48／x .35
+overall        0.8174 ✅（門檻 0.80；laya 只有 0.4424）
+quality        0.7652 ❌（常數ND baseline 0.7565——僅小幅勝出）
+speed          0.9652 ✅
+tokenEfficiency 0.9739 ✅（但低於常數 baseline 0.9913）
+tokenUsage     0.9913 ✅
+priceValue     0.9739 ✅
+來源切片：hn 0.878／reddit 0.781／x 0.765
 ```
 
-混淆矩陣直指病灶：gold 約 9 成是 `not-discussed` 的面向，laya 幾乎每則都硬給態度
-（例：tokenEfficiency 有 35 筆「沒談效率」被判 negative）。
+**判讀**：overall 大幅過線、榜單可用；但各面向（not-discussed 佔九成）只小幅勝過
+「全猜 not-discussed」常數 baseline——R4 預測的指標設計問題屬實。
+**待 owner 決策**：(a) 面向門檻改「勝過常數 baseline」而非絕對 0.80，或 (b) 維持門檻
+並接受 quality 面向偏弱（主要誤差：neutral 貼文被評審團判 positive，11/90）。
 
-## 3. 進行中的工作（交接對象要注意）
+**歷史對照（第一輪假 gold 上的 laya 成績，僅供參考）**：舊 gold（部分出身不可驗證）上
+laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與正確率倒掛。
+混淆矩陣病灶：gold 約 9 成是 `not-discussed`，laya 幾乎每則硬給態度。此結論在真 gold v2
+上由評審團驗證結果取代（見上）。
 
-**v1.2 重標 40 筆平手列**（`data/calibration/redo-worksheet.jsonl`，四家重標）：
-- ✅ 已到：`annotations2-qwen.jsonl`、`annotations2-minimax.jsonl`
-- 🔄 進行中：mimo（`ses_f1331c4c9ffepDBCPJPGSx3xXC`）、nemotron 重試（`ses_f1322de6bffe72J8IZIY95QJS6`）
-- 到齊後的合併步驟（與第一輪同法，腳本模式見 git log `6f24c9e` 前後）：
-  1. 對 40 列逐格四家多數（≥3/4）→ 回填 `annotation-worksheet.jsonl` 對應列的六個 `gold_*`
-     （該列必須六格全數有解才回填；仍平手的整列留 null → 記 `ambiguous` 排除，如實入報告）
-  2. `python -m arena.calibrate make-evals` → 重產 `gold.jsonl`
-  3. commit 數據
-- 已知初步訊號：v1.2 規則下 qwen×minimax 同格一致率 0.79→0.91，預計多數列能收掉 35/40 上下。
+## 3. 方向 B 結論（歷史，已被 C8 取代）
 
-**gold 定案後**：laya 用完整 gold（~140+）重跑一次正式評測，作為「laya 淘汰與否」的最終依據，
-結果寫進 `docs/calibration-report.md`（尚未建立）。
+- **R4/R5 研究**（`docs/research/laya-usage-accuracy.md`、`jev-variants-survey.md`）：
+  laya 官方 self-eval 同族任務 0.442 → 病灶是 domain fit，不是問法；JEV 變體普查
+  194 專案無已證實更優者；成本論證失效（LLM 評審一趟 $0.13）。
+- **C8 評審團上線**：`arena score` 改四人評審團（契約 plan.md 裁定 12），216 筆真資料
+  已重評、v1.2 榜單已產（commit `90751d7`）。qwen3.7-flash 列為觀察員，等更多
+  一致率數據再決定是否收斂單一評審。
 
-## 4. 待研究：方向 B（owner 已選，待派 researcher）
+## 5. 進行中／待決
 
-owner 假設：「laya/JEV 是專門做即時決策的模型，官方 benchmark 有 GPT-5.6 Sol 級，
-差距不太可能這麼大 → 可能是**我們問法**的問題」。任務卡：`.openchamber/plans/llm-arena-c7-laya-rescue-research.md`。
-
-PM 補的警告（供研究者中立看待）：官方高分成績的题型是**結構化決策**（JevBench：
-invoice／客服／安全／agent trace 的「該怎麼做」），不是「讀一則社群貼文判斷作者態度」——
-先查 domain fit 再查 elicitation；另外 ex-ante 用同一份 gold 反覆試設計有 overfitting 風險，
-要 held-out。
-
-## 5. 其他未決（plan.md 待決事項鏡像）
-
-- 排程頻率（每日／每週）未定；上線後才需要
-- C2 歸屬漏洞：清單外新模型（Astra／Fable／Luna…）的貼文會進池（三態「兩者皆未出現→留」
-  分枝），清單要定期擴充或 collect 端加「其他厂商模型名」黑名單——尚未開任務卡
+- **面向門檻設計**（需 owner 拍板）：quality 0.7652 < 0.80，且各面向僅微幅勝過常數
+  baseline——選項 (a) 門檻改「勝過常數 baseline」、(b) 接受現狀並在榜單標註面向可信度、
+  (c) 針對 quality 補標註／調 rubric（成本高）
+- **單一評審收斂**：juryVotes 逐票數據累積中，等一致率樣本夠多再評估 qwen3.7-flash 單飛
+- 排程頻率（每日／每週）未定；`meta.judge.calibrated` 仍 `false`（overall 過線但
+  quality 未過——維持 false 直到 owner 裁定門檻設計）
+- C2 歸屬漏洞：清單外新模型（Astra／Fable／Luna…）的貼文會進池，清單要定期擴充或
+  collect 端加黑名單——尚未開任務卡
 - jason-lab 端尚未動工；`data/scores.json`（真資料版）＋種子 `data/samples/` 都是它可用的開發資料
-- `meta.judge.calibrated` 目前 `false`（laya 未過線）；換 judge 後要同步改 `plan.md` 的 judge 定義
-- **C8 換 judge 後 `arena build` 尚未跟上**（工作樹未 commit）：build 的 `_CANONICAL_JUDGES`
-  仍只認 laya、`meta.judge` 仍寫 laya 形狀；真跑評審團、要重跑 `arena build` 前得先更新它
-  （否則 llm-jury 的列會被當 judge 不符跳過）。屬 C8 後續步驟。
 
 ## 6. 快速上手指令
 
