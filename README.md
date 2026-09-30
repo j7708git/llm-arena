@@ -6,8 +6,10 @@
 網站（[`jason-lab`](../jason-lab)）讀取本 repo 的資料產物來呈現排行榜。
 
 - 定位：真的能跑、能重跑的評測工具，而不是展示品
-- 狀態：**骨架階段**——CLI 五個子命令（`fetch-models`／`collect`／`score`／`build`／`validate`）
-  皆已實作；上線門檻（C5 校準）尚未達成（見 `docs/plan.md`）
+- 狀態：**v1.2 已上線**——CLI 五個子命令（`fetch-models`／`collect`／`score`／`build`／
+  `validate`）皆已實作；C5 校準驗證已通過（gold v2、overall 0.8174 過關，
+  owner 認可 2026-09-30，`meta.judge.calibrated: true`）。
+  詳見 `docs/plan.md` 與 `docs/calibration-report.md`
 
 ## 產出什麼
 
@@ -19,21 +21,32 @@
 ## 方法（概要）
 
 1. **模型清單**：以人工維護清單為主，附掛 OpenRouter 公開 API `https://openrouter.ai/api/v1/models` 的定價與 context length（用 API，不爬 HTML）。
-2. **社群收集**：排程 agent 使用 `last30days` 技能抓近 30 天社群討論（Reddit／X／HN／論壇）。
-3. **評分（兩層設計）**：
-   - 慢層（做一次）：強推理模型 + rubric 定義「智能／速度／Token 效率／Token 用量／CP 值」五個面向的判斷準則與邊界案例。
-   - 快層（做很多次）：JEV 家族（自架 `laya`）對逐則貼文投票並輸出**校準機率**（一次 pass 問六題、不解碼 output token）。
+2. **社群收集**：排程 agent 使用 `last30days` 技能抓近 30 天社群討論（Reddit／HN／X）。
+3. **評分（LLM 四人評審團）**：四位 LLM（deepseek-v4.1-flash／glm-5.3-flash／
+   gpt-6-luna／qwen3.7-flash，皆經 OpenRouter）對逐則貼文**獨立**回答六題
+   （overall＋五面向、溫度 0），每面向取多數決；`prob`＝同票比例（4/4→1.0、
+   3/4→0.75），2/4 平手的面向記 `null`（資料不足）。原始票保留在 `juryVotes`，
+   供日後收斂單一評審用。
+
+   > 初版評分器 `laya`（JEV 家族小模型）已於 2026-09-30 淘汰：它在 gold 考卷上
+   > 只有 0.4424，對這種語意判斷明顯不準確（domain fit 問題）。研究與淘汰理由見
+   > `docs/research/laya-usage-accuracy.md`；其 0.4424 量自已作廢的舊 gold，
+   > 與現行評審團的 0.8174 沒有直接對比。
 4. **分數是算出來的**：每個面向 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)`，
    再以偽樣本數 `K=10` 向 50 收縮（樣本越小越往 50 靠攏）；總分＝各面向加權平均
    （權重見 `meta.weights`，null 維度剔除後重歸一）。公式可驗證，模型不直接打分。
 
 > 這是**社群聲量代理指標，不是 benchmark**。所有呈現都必須標明這點。
 
-## 上線門檻（未達成前不得發布分數）
+## 上線門檻（2026-09-30 已達成）
 
-- [ ] 人工標註 100~200 則作為 ground truth，驗證準確率與**校準度**
-- [ ] 去重機制（同一則爆紅貼文被轉貼多次只算一次）
-- [ ] 送評時遮蔽模型名稱，避免評分器自我偏袒
+- [x] ground truth（gold v2）：四家真 LLM 逐則 API 標註、≥3/4 多數定案 117 列；
+      評審團 vs gold：overall **0.8174** 過關（門檻 0.80），報告見
+      `docs/calibration-report.md`
+- [x] 去重機制（正規化 hash，跨檔與跨來源轉貼只算一次）
+- [x] 偏袒防護：評審團成員刻意避開 gold 標註的模型家族；「社群聲量代理指標、
+      非 benchmark」的定位以 `meta.disclaimer` 全程標示。（原構想的「送評前遮蔽
+      模型名稱」未實作——貼文文字天然含模型名，改倚賴多數決與上述定位標示）
 
 ## 目錄結構
 
@@ -44,12 +57,12 @@ tests/
 docs/              plan.md、annotation-guide.md、research/
 ```
 
-## CLI（規劃中）
+## CLI
 
 ```bash
 arena fetch-models   # 更新模型清單與定價
 arena collect        # 抓取社群貼文（排程執行）
-arena score          # JEV 逐則評分
+arena score          # LLM 四人評審團逐則評分（多數決）
 arena build          # 產出 data/scores.json
 arena validate       # 檢查資料是否符合 schema
 ```
@@ -75,40 +88,41 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/python -m pytest
 ```
 
-### 評分相依（`arena score`，任務 C3）
+### 評分相依（`arena score`，C8 LLM 評審團）
 
-`arena score` 需要 `laya`（JEV 家族評分器，**CPU 可跑**）。它的 `torch` 預設會抓 CUDA
-wheel，本機請指定 CPU backend：
-
-```bash
-uv pip install --python .venv/bin/python -e ".[score,dev]" --torch-backend=cpu
-```
-
-首次執行 `arena score` 會下載約 842MB 的英文 checkpoint（存進 Hugging Face 快取，
-之後可離線重跑）。模型 revision、prompt、batch size 都固定在 `src/arena/score.py`，
-選型理由與坑見 `docs/research/jev-scoring.md`。
+評分走 OpenRouter API，需要環境變數 `OPENROUTER_API_KEY`；**缺 key 時明確報錯，
+不會靜默降級**。預設為同步呼叫（溫度 0）；`--batch` 可切 batch API（半價、非同步，
+批次要等數分鐘起跳），`ARENA_SCORE_NO_BATCH=1` 可強制同步。
 
 ```bash
-# 對預設路徑 data/evidence/*.jsonl 逐則評分（laya，CPU）
+# 對預設路徑 data/evidence/*.jsonl 逐則評分
 .venv/bin/arena score
 
-# 指定單一檔（score 子命令的 CLI 參數待 cli.py 解凍；目前先用環境變數）
+# 指定單一檔
 ARENA_EVIDENCE_FILES=data/evidence/2026-09-29.jsonl .venv/bin/arena score
 
 # 重評所有行，包含已有 votes 的行（預設會跳過）
-ARENA_SCORE_FORCE=1 .venv/bin/arena score
+.venv/bin/arena score --force
 ```
 
-評分結果會把 `votes`（六題投票）、`judge`（`laya@55cf4c4`）回填進 evidence。
-輸出採**原子寫入**（先寫同目錄暫存檔再 rename），中途失敗不會留下半截 jsonl；
-已有 `votes` 的行會跳過，因此可重複執行。
+評分結果把 `votes`（六題多數決）、`juryVotes`（四位評審的原始票）與
+`judge`（`llm-jury@<membersHash 前 8 碼>`）回填進 evidence。輸出採**原子寫入**
+（先寫同目錄暫存檔再 rename），中途失敗不會留下半截 jsonl；已有 `votes` 的行
+會跳過，因此可重複執行。四家跑完全池（216 則 × 6 題）成本約 $0.13。
+成員名單與評審團契約見 `docs/plan.md` 實作裁定 12。
 
-### 資料契約（schema v1.1）
+> 舊評分器 `laya`（JEV 家族、CPU 本地推論）的安裝與調校說明已隨其淘汰移除；
+> 歷史選型理由與坑清單保留在 `docs/research/jev-scoring.md` 與
+> `docs/research/laya-usage-accuracy.md`。
 
-evidence 的每則貼文以 `votes` 記錄**一次 pass 的六題投票**：`overall`（總評）＋五個面向
-`quality`／`speed`／`tokenEfficiency`／`tokenUsage`／`priceValue`，每題 `{label, prob}`，
-`prob` 一律是 laya 的 `answer_confidence`（校準機率）。未評分時 `votes`／`judge` 為 `null`，
-結構仍合法。
+### 資料契約（schema v1.2）
+
+evidence 的每則貼文以 `votes` 記錄評審團的**多數決結果**（六題：`overall` 總評＋
+五個面向 `quality`／`speed`／`tokenEfficiency`／`tokenUsage`／`priceValue`），
+每題 `{label, prob}`；`prob`＝同票比例（4/4→1.0、3/4→0.75），**2/4 平手的面向
+`label`／`prob` 皆為 `null`**（視同資料不足，build 自動排除）。每位評審的原始票
+保留在 `juryVotes.<面向>.<評審短名>`。未評分時 `votes`／`juryVotes`／`judge`
+為 `null`，結構仍合法。
 
 rubric（題目文字見 `src/arena/score.py` 的 `QUESTION`；`overall` 用 positive／negative／
 neutral，五個面向用 positive／negative／`not-discussed`）：
@@ -125,7 +139,7 @@ neutral，五個面向用 positive／negative／`not-discussed`）：
 `not-discussed`＝「貼文未談該面向，或談了但沒有評價立場」，**不同於**「談了但中立」
 （`neutral` 只屬於 `overall`）。
 
-`data/scores.json`（v1.1）：`meta.dimensions` 宣告站方表格欄位（id／label），
+`data/scores.json`（v1.2）：`meta.dimensions` 宣告站方表格欄位（id／label），
 `models[].dimensions` 是開放 map，**鍵必須恰好等於 `meta.dimensions` 的 id 集合**
 （`validate` 會交叉檢查）。某一面向完全沒有正負表態時，該維度是 **`null`**＝
 **「資料不足」**，站方必須顯示為資料不足，**不得顯示成 50**。`meta.weights` 是總分權重，
@@ -209,19 +223,19 @@ X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控）�
 流程重點：
 
 - **過濾**：只留 `reddit`／`hackernews`／`x`（`source` 白名單，擋掉 jobs 等雜訊）；
-  排除非英文貼文（拉丁字母比例 < 0.6；`laya` 是英文 checkpoint）；缺 `url`／時間者丟棄。
+  排除非英文貼文（拉丁字母比例 < 0.6；評分 rubric 為英文）；缺 `url`／時間者丟棄。
   最後做**歸屬三態**判定：同時提及兩個以上設定模型名 → 丟（歸屬不明）；貼文未提
   query 模型、卻提及**其他**模型名（比對模型全名、id 末段、以及去廠牌首詞的版本後綴，
   例：`Claude Sonnet 5.5` 也接受 `Sonnet 5.5`）→ 丟並計入 `誤歸屬`（引擎模糊比對造成
   的錯歸屬，例：查 `Claude Sonnet 4` 回傳的 `Sonnet 5.5` 貼文）；兩者皆未出現 → 保留，
   靠引擎 relevance（例如留言上下文只寫「this model」）。
-- **`text`**：`title` ＋ `summary` 合成後**截斷至 1200 字元**（`laya` 的 state
-  實際可用約 320 tokens，見 `docs/research/jev-scoring.md` 坑 6）。
+- **`text`**：`title` ＋ `summary` 合成後**截斷至 1200 字元**（控制單則的評分
+  prompt 大小與成本，且先截斷可讓校準用 `--slice tag=long` 單獨量長文子集）。
 - **`hash`**：正規化文字（小寫、空白壓扁）的 sha256，**跨所有 evidence 檔去重**
   （同批與跨檔都比對，跨來源轉貼亦然），重複只留一筆。
 - **補缺**：`author` 用 Reddit 公開 JSON／貼文摘要的 `/u/` 回填，HN 討論頁連結與
   作者用 Algolia API 以標題查回（皆免 key）；補不到就留 `null`，不阻擋流程。
-  X 的作者已由永久連結取得，不走補缺。`votes`／`judge` 由 C3 `arena score` 回填。
+  X 的作者已由永久連結取得，不走補缺。`votes`／`judge` 由 `arena score`（C8 評審團）回填。
 - **`source_status`**：只有 `ok`／`no-results` 視為正常；`skipped-unconfigured`
   是預期跳過（見上）；`rate-limited` 等失敗狀態會退避重試
   （`--retries`／`--retry-backoff`），仍失敗則明確警告、不當成「沒討論」。
@@ -243,7 +257,7 @@ Reddit 的 keyless 路徑會限流；連續抓多個模型時請保留 `--sleep`
 讀 `data/evidence/*.jsonl` 與 `data/models.json`，由 evidence 的 `votes` 聚合出
 `data/scores.json`。**分數全部由公式算出，模型不直接打分**：
 
-- 只計**已評分**的列（`judge` 為 laya pin 版、`votes` 六鍵完整）；`votes` 為 `null`
+- 只計**已評分**的列（`judge` 為 `llm-jury@<hash>`、`votes` 六鍵完整）；`votes` 為 `null`
   的未評分列會跳過並在 stderr 報數量。
 - 每面向 `P`＝positive 數、`N`＝negative 數、`n = P + N`（`not-discussed` 不計入）；
   `n = 0` → 該面向 `null`（「資料不足」，不得當成 50）。
@@ -284,40 +298,39 @@ print('一致' if a == b else '不一致')
 PY
 ```
 
-## C5 校準流程（人工標註）
+## C5 校準流程（gold 考卷，2026-09-30 定案）
 
-C5 需要一份人工標註的 ground truth（目標 150 則、每則標六個面向），才能量準確率與 ECE。
-抽樣工作檔已隨 repo 附上：`data/calibration/annotation-worksheet.jsonl`（150 筆）。
+gold v2 由**四家真 LLM**（qwen3.8-flash／mimo-v2.6-flash／minimax-m3／
+nemotron-3.5-lightning）以 OpenRouter API **逐則、溫度 0** 標註（規則照
+`docs/annotation-guide.md` v1.2），≥3/4 多數定案 117 列。第一輪「四家標註」因部分
+出自 regex 腳本冒名、出身不可驗證，已**全部作廢重做**；出身可由
+`tools/annotate_gold.py`＋API 帳單重現。
 
 ```bash
-# 1. 由 evidence 重新抽樣（已附檔，想重抽再跑；固定 seed，同池重跑位元組相同）
+# 1. 由 evidence 重新抽樣標註工作檔（固定 seed，同池重跑位元組相同）
 .venv/bin/python -m arena.calibrate sample
-#   分層＝來源（reddit/hn/x）× overall 信心帶；answer_confidence < 0.70 加權 2.5 倍；
-#   目標 n=150（每來源≥25）；中繼資料寫進 annotation-worksheet.jsonl.meta.json
 
-# 2. 逐筆標註：編輯 annotation-worksheet.jsonl，填六個 gold_*（+ notes/annotator/annotatedAt）
-#    規則見 docs/annotation-guide.md。工作檔刻意沒有模型預測欄位（防 anchoring），
-#    要對照時一律用 hash join 回 evidence。
+# 2. 四家真 LLM 逐則標註（各跑一次；可續跑，已標 hash 自動跳過）
+export OPENROUTER_API_KEY=sk-or-...
+.venv/bin/python tools/annotate_gold.py --model qwen/qwen3.8-flash \
+  --annotator qwen3.8-flash --out data/calibration/real/annotations-qwen3.8-flash.jsonl
 
-# 3. 看標註進度（完成／部分／未標，以及各面向非空數）
-.venv/bin/python -m arena.calibrate stats
+# 3. 合併四家標註 → gold（≥3/4 多數；不足則該列記 ambiguous）
+.venv/bin/python tools/merge_gold.py --inputs data/calibration/real/annotations-*.jsonl
 
-# 4. 標完後轉成 laya-evals 可吃的 gold，直接跑校準
-.venv/bin/python -m arena.calibrate make-evals
-LAYA_DEVICE=cpu .venv/bin/laya-evals run data/calibration/gold.jsonl \
-  --model english --device cpu --batch-size 8 --min-accuracy 0.80 --max-ece 0.10 \
-  --slice tag --markdown docs/calibration-report.md --json docs/calibration-report.json
+# 4. 對同一批貼文跑 arena score 後，做「評審團 vs gold」驗證
+.venv/bin/python tools/eval_jury_vs_gold.py --gold data/calibration/gold-v2.jsonl \
+  --scored data/evidence/2026-09-29.jsonl \
+  --out docs/calibration-report.md --json docs/calibration-report.json
 ```
 
-**怎麼編輯工作檔？** 建議直接改 JSONL：每行一筆，六個 `gold_*` 填正式標籤
-（`overall` 用 `positive`/`negative`/`neutral`；五面向用 `positive`/`negative`/`not-discussed`），
-`notes` 可寫 `mixed`／`off_target`／`truncated` 等標記。標籤與欄位全部照
-`docs/annotation-guide.md`，不要新增欄位。我們**沒有**內建互動式 TUI（逐筆按鍵標註）：
-理由是人工標註是一次性、150 筆，編輯檔案＋`stats` 已足夠，且可版控、可 review；
-若日後標註量變大再考慮補 `show` 子命令。
+驗證門檻（owner 裁定 2026-09-30）：overall accuracy ≥ 0.80；五個面向改比
+「accuracy 須勝過常數 not-discussed baseline」（not-discussed 佔九成時，絕對
+0.80 是誤導性指標）；「有討論列數」< 10 的面向標『樣本不足』。最新結果：
+**overall 0.8174 ✅**，報告見 `docs/calibration-report.md`。
 
-> 單人標註後，第二人重標 30 筆算 Cohen's κ（**κ ≥ 0.70** 才過關）；κ 太低要先修指南再重標，
-> 詳見 `docs/annotation-guide.md` 第 4 節。
+> 舊版流程（laya-evals 本地校準、`arena calibrate make-evals`）隨 laya 淘汰，
+> 僅保留於 git 歷史與 `docs/research/laya-usage-accuracy.md`。
 
 ## 注意事項
 
