@@ -17,3 +17,7 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+
+# archify 自動檢查截圖（可重新產生，不進版控）
+docs/architecture.visual-check.*
+.openchamber/
