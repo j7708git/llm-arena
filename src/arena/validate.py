@@ -14,7 +14,12 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from arena.schema import EvidenceRecord, ScoresDocument, dimension_key_errors
+from arena.schema import (
+    EvidenceRecord,
+    EvidenceRecordV12,
+    ScoresDocument,
+    dimension_key_errors,
+)
 
 EXIT_OK = 0
 EXIT_INVALID = 1
@@ -86,10 +91,25 @@ def validate_scores_data(data: object) -> list[str]:
     return dimension_key_errors(document)
 
 
+def _evidence_model_for(payload: dict):
+    """依內容挑 evidence 的 schema 版本（實作裁定 12）。
+
+    evidence 每行沒有版本欄位，因此以「有沒有 ``juryVotes``」或
+    「``judge`` 是否為 ``llm-jury@``」判斷是否為 v1.2 評審團版；否則用 v1.1。
+    """
+    judge = payload.get("judge")
+    if "juryVotes" in payload or (
+        isinstance(judge, str) and judge.startswith("llm-jury@")
+    ):
+        return EvidenceRecordV12
+    return EvidenceRecord
+
+
 def validate_evidence_lines(text: str) -> list[str]:
     """逐行驗證 evidence jsonl；回傳錯誤訊息清單（合法則為空）。
 
-    空行會被略過；每條訊息帶上第幾行。
+    空行會被略過；每條訊息帶上第幾行。每行依內容分 v1.1／v1.2 schema
+    （:func:`_evidence_model_for`）。
     """
     errors: list[str] = []
     for line_number, raw_line in enumerate(text.splitlines(), start=1):
@@ -103,8 +123,12 @@ def validate_evidence_lines(text: str) -> list[str]:
                 f"第 {line_number} 行：JSON 解析失敗：{exc.msg}（第 {exc.colno} 欄）"
             )
             continue
+        if not isinstance(payload, dict):
+            errors.append(f"第 {line_number} 行：每行必須是 JSON 物件")
+            continue
+        model = _evidence_model_for(payload)
         try:
-            EvidenceRecord.model_validate(payload)
+            model.model_validate(payload)
         except ValidationError as exc:
             for message in _errors_from_validation(exc):
                 errors.append(f"第 {line_number} 行：{message}")

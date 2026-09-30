@@ -14,8 +14,10 @@ import pytest
 from arena.cli import main
 from arena.schema import (
     FACET_DIMENSION_IDS,
+    JURY_SCHEMA_VERSION,
     VOTE_IDS,
     EvidenceRecord,
+    EvidenceRecordV12,
     ScoresDocument,
 )
 from arena.validate import validate_path
@@ -23,6 +25,7 @@ from arena.validate import validate_path
 ROOT = Path(__file__).resolve().parents[1]
 SEED_SCORES = ROOT / "data" / "scores.json"
 SEED_EVIDENCE = ROOT / "data" / "samples" / "evidence.sample.jsonl"
+REAL_EVIDENCE = ROOT / "data" / "evidence" / "2026-09-29.jsonl"
 
 
 def load_seed_scores() -> dict:
@@ -48,6 +51,132 @@ def _valid_votes() -> dict:
     return votes
 
 
+# --- v1.2 評審團（C8，實作裁定 12）------------------------------------------
+
+
+def _jury_votes(labels: dict[str, str] | None = None, *, members: list[str] | None = None) -> dict:
+    """組出合法 juryVotes：成員短名 → 標籤（預設全 positive/not-discussed）。"""
+    names = members or ["deepseek-v4.1-flash", "glm-5.3-flash", "gpt-6-luna", "qwen3.7-flash"]
+    base = labels or {"overall": "positive"}
+    votes = {}
+    for facet in VOTE_IDS:
+        value = base.get(facet, "not-discussed" if facet != "overall" else "positive")
+        votes[facet] = {name: value for name in names}
+    return votes
+
+
+def _v12_record(*, votes: dict | None = None, jury: dict | None = None, judge: str | None = "llm-jury@a1b2c3d4") -> dict:
+    record = copy.deepcopy(_seed_evidence_records()[0])
+    record["votes"] = _valid_votes() if votes is None else votes
+    record["juryVotes"] = _jury_votes() if jury is None else jury
+    record["judge"] = judge
+    return record
+
+
+def _write_record(tmp_path: Path, record: dict, name: str = "record.jsonl") -> Path:
+    path = tmp_path / name
+    path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
+
+
+def test_old_and_new_evidence_versions_are_recognised() -> None:
+    """1.2 的分流靠 juryVotes／llm-jury judge；1.1 舊檔不受影響。"""
+    assert EvidenceRecord.model_validate(_scored_evidence_record()) is not None
+    assert EvidenceRecordV12.model_validate(_v12_record()) is not None
+
+
+def test_real_laya_evidence_file_still_passes() -> None:
+    """驗收：舊 1.1 evidence（data/evidence/2026-09-29.jsonl）仍要通過。"""
+    assert validate_path(REAL_EVIDENCE) == []
+    assert main(["validate", str(REAL_EVIDENCE)]) == 0
+
+
+def test_v12_evidence_passes(tmp_path: Path) -> None:
+    path = _write_record(tmp_path, _v12_record())
+    assert validate_path(path) == []
+    assert main(["validate", str(path)]) == 0
+
+
+def test_v12_tie_null_label_and_prob_passes(tmp_path: Path) -> None:
+    votes = _valid_votes()
+    votes["speed"] = {"label": None, "prob": None}
+    path = _write_record(tmp_path, _v12_record(votes=votes))
+    assert validate_path(path) == []
+
+
+def test_v12_half_null_vote_is_rejected(tmp_path: Path) -> None:
+    votes = _valid_votes()
+    votes["speed"] = {"label": None, "prob": 0.5}
+    errors = validate_path(_write_record(tmp_path, _v12_record(votes=votes)))
+    assert any("speed" in message for message in errors)
+
+
+def test_v12_requires_jury_votes_when_scored(tmp_path: Path) -> None:
+    record = _v12_record(jury=None)
+    del record["juryVotes"]
+    errors = validate_path(_write_record(tmp_path, record))
+    assert any("juryVotes" in message for message in errors)
+
+
+def test_v12_requires_llm_jury_judge_format(tmp_path: Path) -> None:
+    errors = validate_path(_write_record(tmp_path, _v12_record(judge="laya@55cf4c4")))
+    # judge 以 llm-jury@ 判定版本，因此要明白報格式不符。
+    assert any("judge" in message for message in errors)
+
+
+def test_v12_jury_votes_member_keys_must_be_consistent(tmp_path: Path) -> None:
+    jury = _jury_votes()
+    jury["speed"] = {"deepseek-v4.1-flash": "positive"}  # 成員鍵集合不同
+    errors = validate_path(_write_record(tmp_path, _v12_record(jury=jury)))
+    assert any("juryVotes" in message for message in errors)
+
+
+def test_v12_jury_votes_rejects_invalid_label(tmp_path: Path) -> None:
+    jury = _jury_votes()
+    jury["quality"]["gpt-6-luna"] = "neutral"  # neutral 不屬於面向
+    errors = validate_path(_write_record(tmp_path, _v12_record(jury=jury)))
+    assert any("quality" in message for message in errors)
+
+
+def test_v12_jury_evidence_extra_field_is_rejected(tmp_path: Path) -> None:
+    record = _v12_record()
+    record["oops"] = True
+    errors = validate_path(_write_record(tmp_path, record))
+    assert any("oops" in message for message in errors)
+
+
+def test_v12_scores_document_passes() -> None:
+    data = load_seed_scores()
+    data["meta"]["schemaVersion"] = JURY_SCHEMA_VERSION
+    data["meta"]["judge"] = {
+        "kind": "llm-jury",
+        "members": [
+            "deepseek/deepseek-v4.1-flash",
+            "z-ai/glm-5.3-flash",
+            "openai/gpt-6-luna",
+            "qwen/qwen3.7-flash",
+        ],
+        "calibrated": False,
+    }
+    document = ScoresDocument.model_validate(data)
+    assert document.meta.schemaVersion == 1.2
+    assert document.meta.judge.kind == "llm-jury"
+
+
+def test_v12_scores_requires_jury_judge_shape(tmp_path: Path) -> None:
+    data = load_seed_scores()
+    data["meta"]["schemaVersion"] = JURY_SCHEMA_VERSION  # 仍是 laya judge
+    errors = validate_path(write_json(tmp_path / "scores.json", data))
+    assert any("judge" in message for message in errors)
+
+
+def test_v11_scores_with_jury_judge_is_rejected(tmp_path: Path) -> None:
+    data = load_seed_scores()
+    data["meta"]["judge"] = {"kind": "llm-jury", "members": ["a/b"], "calibrated": False}
+    errors = validate_path(write_json(tmp_path / "scores.json", data))
+    assert any("judge" in message for message in errors)
+
+
 # --- 合法 -------------------------------------------------------------------
 
 
@@ -56,7 +185,7 @@ def test_seed_scores_pass(capsys: pytest.CaptureFixture[str]) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "符合 schema v1.1" in captured.out
+    assert "符合 schema" in captured.out
     assert captured.err == ""
 
 
@@ -65,7 +194,7 @@ def test_seed_evidence_pass(capsys: pytest.CaptureFixture[str]) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "符合 schema v1.1" in captured.out
+    assert "符合 schema" in captured.out
 
 
 def test_validate_path_returns_no_errors_for_seed() -> None:

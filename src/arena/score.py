@@ -1,8 +1,19 @@
-"""`arena score` 的實作（任務 C3；A3 升級為 v1.1 六題投票）：以 laya JEV 模型對
-evidence 逐則投票。
+"""`arena score` 的實作：**C8 起以 OpenRouter 四人 LLM 評審團**對 evidence 逐則投票。
 
-設計與所有 laya 用法以 ``docs/research/jev-scoring.md``（R1 研究筆記）為準；
-schema v1.1 的欄位語意以 ``docs/plan.md``「資料契約」與實作裁定 7~9 為準：
+C8（2026-09-30）後 `arena score` 的預設 judge 是 LLM 評審團，實作在
+:mod:`arena.jury`（成員、聚合、重試、batch 都照 ``docs/plan.md`` 實作裁定第 12 條）；
+本模組保留評分流程骨架（掃描、跳過已評分、原子寫入）與 laya 版的 :class:`LayaPredictor`
+（**已淘汰，見下**，僅留在 git 歷史供回溯與舊測試）。
+
+評分流程：送評的 state **只放貼文文字**（不放 modelId／模型名，避免評分器自我偏袒）；
+回填 ``votes``（多數決聚合；2/4 平手該面向記 null）、``juryVotes``（逐票）與
+``judge``（``llm-jury@<hash>``）。輸出採**原子寫入**：先寫同目錄暫存檔、fsync 後以
+``os.replace`` 覆蓋；過程中任何例外都不會留下半截 jsonl。已有 ``votes`` 的行會被跳過
+（冪等），``force`` 為真時才重評。
+
+C3 的 laya 實作（設計與用法見 ``docs/research/jev-scoring.md``）保留在此，
+標記為 DEPRECATED；其 schema v1.1 欄位語意以 ``docs/plan.md``「資料契約」
+與實作裁定 7~9 為準：
 
 - 模型：``convaiinnovations/laya`` 英文 checkpoint，pin revision
   ``55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851``（筆記「具體選型參數」）。
@@ -11,26 +22,18 @@ schema v1.1 的欄位語意以 ``docs/plan.md``「資料契約」與實作裁定
   五個面向題的標籤是 positive／negative／``not-discussed``（「貼文未談該面向，
   或談了但沒有評價立場」）；identical 的 third option 是 not-discussed。
 - 校準機率用 ``answer_confidence``（＝``max(p)``），**不是** ``confidence``。
-- 送評的 state **只放貼文文字**（不放 modelId／模型名），避免評分器自我偏袒；
-  題目文字也不得出現任何模型名。
 - 六題結果以 ``votes``（六鍵）回填，``judge`` 寫 ``laya@55cf4c4``。
 - 固定 ``batch_size``：laya 同 process 重跑確定，但 batch 大小不同會有微浮點差
   （筆記「已知坑」第 9 條）。
 - ``USE_TF=0``、預設 ``LAYA_DEVICE=cpu``（筆記「已知坑」第 11 條、「具體選型參數」）。
 
-輸出採**原子寫入**：先寫同目錄的暫存檔、fsync 後以 ``os.replace`` 覆蓋原檔；
-過程中任何例外都不會留下半截 jsonl。已有 ``votes`` 的行會被跳過（冪等），
-``force`` 為真時才重評。
-
-CLI 參數：``cli.py`` 目前（2026-09-29）由多個任務並行維護而凍結，score 子命令
-尚未掛上參數。因此本模組的 :func:`run` 以 ``getattr(args, ...)`` 向後相容，
-並支援環境變數：
+CLI 參數：``cli.py`` 解凍後會呼叫 :func:`add_arguments`，掛上 ``files`` 位置參數、
+``--force`` 與 ``--batch``（非同步半價版；**預設為同步呼叫**）。另支援環境變數：
 
 - ``ARENA_EVIDENCE_FILES``：以 ``:`` 分隔的 evidence 檔清單（預設 ``data/evidence/*.jsonl``）。
 - ``ARENA_SCORE_FORCE``：設為 1/true/yes 時等同 ``--force``。
-
-待 ``cli.py`` 解凍後，於建立 score 子解析器時呼叫 :func:`add_arguments` 即可接上
-``files`` 位置參數與 ``--force``。
+- ``ARENA_SCORE_NO_BATCH``：設為 1/true/yes 時強制同步（蓋過 ``--batch``）。
+- ``OPENROUTER_API_KEY``：評審團 API key；**缺 key 時明確報錯，不得靜默降級**。
 """
 
 from __future__ import annotations
@@ -57,6 +60,8 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 
 # 模型與評分常數（R1 筆記「具體選型參數」）。
+# DEPRECATED（C8，2026-09-30）：laya 在 gold 上 0.4424、domain fit 問題，score 已改接
+# LLM 評審團（arena.jury）。以下常數與 LayaPredictor 保留供回溯與舊測試，勿用於新流程。
 MODEL_ID = "convaiinnovations/laya"
 REVISION = "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"
 JUDGE = "laya@55cf4c4"
@@ -199,21 +204,33 @@ class ScoreError(RuntimeError):
 
 @dataclass(frozen=True)
 class Vote:
-    """單一題目的投票：標籤 + 校準機率。"""
+    """單一題目的投票：標籤 + 機率。
 
-    label: str
-    prob: float
+    C8 起兩者允許同時為 ``None``：代表該面向在評審團聚合後 2/4 平手
+    （視同資料不足）；laya 版永遠有值。
+    """
+
+    label: str | None
+    prob: float | None
 
 
 @dataclass(frozen=True)
 class Prediction:
-    """單則貼文的六題投票結果（鍵為 `VOTE_IDS`）。"""
+    """單則貼文的六題結果（鍵為 `VOTE_IDS`）。
 
-    votes: dict[str, Vote]
+    ``votes`` 為 None 代表整則作廢（有評審呼叫失敗）；``jury_votes`` 為逐位評審的
+    原始票（鍵：面向 → 成員短名 → 標籤或 null），laya 版為 None。
+    """
+
+    votes: dict[str, Vote] | None
+    jury_votes: dict[str, dict[str, str | None]] | None = None
 
 
 class Predictor(Protocol):
-    """評分器介面；測試以假物件注入，正式則為 :class:`LayaPredictor`。"""
+    """評分器介面；正式為 :class:`arena.jury.JuryPredictor`（測試以假物件注入）。
+
+    :class:`LayaPredictor` 是 C3 的舊實作（DEPRECATED），仍符合此介面。
+    """
 
     def classify(self, states: list[dict[str, str]]) -> list[Prediction]:
         """對一批 state（每筆為 ``{"post": text}``）回傳對齊順序的預測。"""
@@ -229,7 +246,14 @@ def build_state(record: dict[str, Any]) -> dict[str, str]:
 
 
 class LayaPredictor:
-    """以 ``laya.load`` 載入的正式評分器（CPU 可跑、零 output token）。"""
+    """以 ``laya.load`` 載入的評分器（CPU 可跑、零 output token）。
+
+    **DEPRECATED（C8）**：score 已改用 :class:`arena.jury.JuryPredictor`；本類別保留
+    供回溯與舊測試，正常流程不會再建立它。
+    """
+
+    # `arena score` 回填 evidence 的 judge 字串（laya 短 sha）。
+    judge: str = JUDGE
 
     def __init__(self, agent: Any, batch_size: int = DEFAULT_BATCH_SIZE) -> None:
         self.agent = agent
@@ -367,40 +391,67 @@ def _apply(
     tasks: Sequence[_Task],
     predictor: Predictor,
 ) -> int:
-    """呼叫預測器回填 votes／judge，並以原子寫入保存有變動的檔案。"""
+    """呼叫預測器回填 votes／juryVotes／judge，並以原子寫入保存有變動的檔案。"""
     predictions = predictor.classify([task.state for task in tasks])
     if len(predictions) != len(tasks):
         raise ScoreError(
             f"預測器回傳 {len(predictions)} 筆，與輸入 {len(tasks)} 筆不符"
         )
 
+    # judge 由預測器決定（評審團＝llm-jury@<hash>；laya 版＝laya@<sha>）。
+    judge = getattr(predictor, "judge", JUDGE)
+
     expected_ids = set(QUESTION)
     changed: dict[int, set[int]] = {}
     for task, prediction in zip(tasks, predictions):
         plan = plans[task.file_index]
-        got_ids = set(prediction.votes)
-        if got_ids != expected_ids:
-            details: list[str] = []
-            missing = sorted(expected_ids - got_ids)
-            extra = sorted(got_ids - expected_ids)
-            if missing:
-                details.append("缺 " + "、".join(missing))
-            if extra:
-                details.append("多 " + "、".join(extra))
+        votes_payload: dict[str, dict[str, str | None]] | None = None
+        if prediction.votes is not None:
+            got_ids = set(prediction.votes)
+            if got_ids != expected_ids:
+                details: list[str] = []
+                missing = sorted(expected_ids - got_ids)
+                extra = sorted(got_ids - expected_ids)
+                if missing:
+                    details.append("缺 " + "、".join(missing))
+                if extra:
+                    details.append("多 " + "、".join(extra))
+                raise ScoreError(
+                    f"{plan.path} 第 {task.line_index + 1} 行："
+                    f"預測器回傳的投票鍵不符（{'；'.join(details)}）"
+                )
+            votes_payload = {
+                qid: {"label": vote.label, "prob": vote.prob}
+                for qid, vote in prediction.votes.items()
+            }
+
+        jury_votes = prediction.jury_votes
+        if jury_votes is not None and set(jury_votes) != expected_ids:
             raise ScoreError(
                 f"{plan.path} 第 {task.line_index + 1} 行："
-                f"預測器回傳的投票鍵不符（{'；'.join(details)}）"
+                "預測器回傳的 juryVotes 鍵不符"
             )
+
         record = plan.records[task.line_index]
         assert record is not None  # _collect_tasks 已剔除空白行
         # v1 的舊欄位（label／prob）一併移除，避免 extra="forbid" 擋下新檔。
         record.pop("label", None)
         record.pop("prob", None)
-        record["votes"] = {
-            qid: {"label": vote.label, "prob": vote.prob}
-            for qid, vote in prediction.votes.items()
-        }
-        record["judge"] = JUDGE
+        if prediction.votes is None:
+            # 整則失敗（全員失敗／平手無法聚合）：回到「未評分」狀態。
+            # 帶著 judge／juryVotes 的 votes=null 記錄不是合法的 v1.2 形狀，
+            # 也不該被 build 當成已評分。重跑（或 --force）會自動重試。
+            record["votes"] = None
+            record["judge"] = None
+            record.pop("juryVotes", None)
+            changed.setdefault(task.file_index, set()).add(task.line_index)
+            continue
+        record["votes"] = votes_payload
+        record["judge"] = judge
+        if jury_votes is None:
+            record.pop("juryVotes", None)
+        else:
+            record["juryVotes"] = jury_votes
         changed.setdefault(task.file_index, set()).add(task.line_index)
 
     scored = 0
@@ -416,7 +467,12 @@ def _apply(
         _atomic_write_jsonl(plan.path, output)
         scored += len(line_indices)
 
-    print(f"arena score：已評分 {scored} 則（judge={JUDGE}）。")
+    print(f"arena score：已評分 {scored} 則（judge={judge}）。")
+    report = getattr(predictor, "failure_report", None)
+    if callable(report):
+        message = report()
+        if message:
+            print(message, file=sys.stderr)
     return EXIT_OK
 
 
@@ -459,11 +515,7 @@ def _env_flag(name: str) -> bool:
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
-    """把 score 的參數掛上 argparse 子解析器。
-
-    ``cli.py`` 目前為並行開發而凍結，尚未呼叫本函式；解凍後於建立 score 子命令時
-    呼叫即可，``run`` 已用 ``getattr`` 相容這些屬性。
-    """
+    """把 score 的參數掛上 argparse 子解析器（cli.py 會自動呼叫）。"""
     parser.add_argument(
         "files",
         metavar="PATH",
@@ -474,6 +526,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--force",
         action="store_true",
         help="重評所有行，包含已有 votes 的行（預設跳過）",
+    )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="改走 OpenRouter batch API（半價但非同步，批次要等數分鐘到數小時；"
+        "預設為同步呼叫）",
     )
 
 
@@ -497,7 +555,7 @@ def run(args: argparse.Namespace, predictor: Predictor | None = None) -> int:
 
         force = bool(getattr(args, "force", False)) or _env_flag("ARENA_SCORE_FORCE")
 
-        # 先掃描：若沒有任何未評分的行，就不必付載入模型的成本（已評分檔可即時結束）。
+        # 先掃描：若沒有任何未評分的行，就不必付呼叫評審的成本（已評分檔可即時結束）。
         plans = [_load_file(path) for path in paths]
         tasks = _collect_tasks(plans, force)
         if not tasks:
@@ -505,7 +563,13 @@ def run(args: argparse.Namespace, predictor: Predictor | None = None) -> int:
             return EXIT_OK
 
         if predictor is None:
-            predictor = LayaPredictor.load()
+            # 延後匯入：arena.jury 依賴本模組的 QUESTION／Vote／Prediction。
+            from arena.jury import build_jury_predictor
+
+            use_batch = bool(getattr(args, "batch", False)) and not _env_flag(
+                "ARENA_SCORE_NO_BATCH"
+            )
+            predictor = build_jury_predictor(use_batch=use_batch)
 
         return _apply(plans, tasks, predictor)
     except ScoreError as exc:
