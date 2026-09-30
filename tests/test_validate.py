@@ -20,7 +20,7 @@ from arena.schema import (
     EvidenceRecordV12,
     ScoresDocument,
 )
-from arena.validate import validate_path
+from arena.validate import _evidence_model_for, validate_path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED_SCORES = ROOT / "data" / "scores.json"
@@ -165,13 +165,17 @@ def test_v12_scores_document_passes() -> None:
 
 def test_v12_scores_requires_jury_judge_shape(tmp_path: Path) -> None:
     data = load_seed_scores()
-    data["meta"]["schemaVersion"] = JURY_SCHEMA_VERSION  # 仍是 laya judge
+    data["meta"]["schemaVersion"] = JURY_SCHEMA_VERSION
+    # v1.2 不接受 laya 形狀的 judge
+    data["meta"]["judge"] = {"model": "laya", "revision": "abc", "calibrated": False}
     errors = validate_path(write_json(tmp_path / "scores.json", data))
     assert any("judge" in message for message in errors)
 
 
 def test_v11_scores_with_jury_judge_is_rejected(tmp_path: Path) -> None:
     data = load_seed_scores()
+    # v1.1（laya judge）混入評審團 judge 形狀 → 擋下
+    data["meta"]["schemaVersion"] = 1.1
     data["meta"]["judge"] = {"kind": "llm-jury", "members": ["a/b"], "calibrated": False}
     errors = validate_path(write_json(tmp_path / "scores.json", data))
     assert any("judge" in message for message in errors)
@@ -495,7 +499,9 @@ def test_scored_evidence_passes(tmp_path: Path) -> None:
 def test_scores_document_validates_against_schema() -> None:
     document = ScoresDocument.model_validate(load_seed_scores())
 
-    assert document.meta.schemaVersion == 1.1
+    # 2026-09-30 起 build 產出 v1.2（LLM 評審團 judge）。
+    assert document.meta.schemaVersion == 1.2
+    assert document.meta.judge.kind == "llm-jury"
     assert document.meta.kind == "community-sentiment"
     assert len(document.models) >= 1
     # 分數是公式算出來的社群資料，未經 C5 校準，必須如實標示。
@@ -534,7 +540,8 @@ def test_seed_evidence_refs_point_to_real_lines() -> None:
                 if line.strip()
             ]
             assert 1 <= line_number <= len(lines), f"{ref} 行號超出範圍"
-            record = EvidenceRecord.model_validate(json.loads(lines[line_number - 1]))
+            payload = json.loads(lines[line_number - 1])
+            record = _evidence_model_for(payload).model_validate(payload)
             assert record.modelId == model["id"], f"{ref} 不屬於 {model['id']}"
 
 
