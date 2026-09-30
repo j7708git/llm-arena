@@ -1,0 +1,183 @@
+{
+ "goldRows": 117,
+ "evaluated": 115,
+ "missingOrUnscored": 2,
+ "judge": "llm-jury@cd50a7e9",
+ "facets": {
+  "overall": {
+   "accuracy": 0.8174,
+   "constantNDBaseline": 0.0,
+   "macroF1": 0.5706,
+   "n": 115,
+   "passed": true,
+   "ece": 0.0804,
+   "confidenceBands": [
+    {
+     "prob": 0.5,
+     "n": 1,
+     "accuracy": 0.0
+    },
+    {
+     "prob": 0.75,
+     "n": 17,
+     "accuracy": 0.7059
+    },
+    {
+     "prob": 1.0,
+     "n": 90,
+     "accuracy": 0.9111
+    }
+   ]
+  },
+  "quality": {
+   "accuracy": 0.7652,
+   "constantNDBaseline": 0.7565,
+   "macroF1": 0.4698,
+   "n": 115,
+   "passed": false,
+   "ece": 0.1217,
+   "confidenceBands": [
+    {
+     "prob": 0.5,
+     "n": 2,
+     "accuracy": 0.5
+    },
+    {
+     "prob": 0.75,
+     "n": 16,
+     "accuracy": 0.375
+    },
+    {
+     "prob": 1.0,
+     "n": 89,
+     "accuracy": 0.9101
+    }
+   ]
+  },
+  "speed": {
+   "accuracy": 0.9652,
+   "constantNDBaseline": 0.9391,
+   "macroF1": 0.5953,
+   "n": 115,
+   "passed": true,
+   "ece": 0.0109,
+   "confidenceBands": [
+    {
+     "prob": 0.75,
+     "n": 5,
+     "accuracy": 0.8
+    },
+    {
+     "prob": 1.0,
+     "n": 108,
+     "accuracy": 0.9907
+    }
+   ]
+  },
+  "tokenEfficiency": {
+   "accuracy": 0.9739,
+   "constantNDBaseline": 0.9913,
+   "macroF1": 0.2478,
+   "n": 115,
+   "passed": true,
+   "ece": 0.013,
+   "confidenceBands": [
+    {
+     "prob": 0.75,
+     "n": 2,
+     "accuracy": 0.5
+    },
+    {
+     "prob": 1.0,
+     "n": 112,
+     "accuracy": 0.9911
+    }
+   ]
+  },
+  "tokenUsage": {
+   "accuracy": 0.9913,
+   "constantNDBaseline": 0.9826,
+   "macroF1": 0.5556,
+   "n": 115,
+   "passed": true,
+   "ece": 0.0109,
+   "confidenceBands": [
+    {
+     "prob": 0.5,
+     "n": 1,
+     "accuracy": 0.0
+    },
+    {
+     "prob": 0.75,
+     "n": 3,
+     "accuracy": 1.0
+    },
+    {
+     "prob": 1.0,
+     "n": 111,
+     "accuracy": 1.0
+    }
+   ]
+  },
+  "priceValue": {
+   "accuracy": 0.9739,
+   "constantNDBaseline": 0.9217,
+   "macroF1": 0.6797,
+   "n": 115,
+   "passed": true,
+   "ece": 0.0022,
+   "confidenceBands": [
+    {
+     "prob": 0.75,
+     "n": 7,
+     "accuracy": 0.7143
+    },
+    {
+     "prob": 1.0,
+     "n": 107,
+     "accuracy": 1.0
+    }
+   ]
+  }
+ },
+ "overallConfusion": {
+  "positive": {
+   "positive": 9,
+   "negative": 0,
+   "neutral": 1,
+   "__no_answer__": 2
+  },
+  "negative": {
+   "positive": 0,
+   "negative": 7,
+   "neutral": 1,
+   "__no_answer__": 1
+  },
+  "neutral": {
+   "positive": 11,
+   "negative": 1,
+   "neutral": 78,
+   "__no_answer__": 4
+  },
+  "__no_answer__": {
+   "positive": 0,
+   "negative": 0,
+   "neutral": 0,
+   "__no_answer__": 0
+  }
+ },
+ "overallBySource": {
+  "hn": {
+   "n": 49,
+   "accuracy": 0.8776
+  },
+  "reddit": {
+   "n": 32,
+   "accuracy": 0.7812
+  },
+  "x": {
+   "n": 34,
+   "accuracy": 0.7647
+  }
+ }
+}
