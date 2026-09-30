@@ -35,12 +35,10 @@ from arena.score import QUESTION, Prediction, ScoreError, Vote
 # --- 評審團名單（實作裁定 12）-----------------------------------------------
 
 # 評審成員（base id）；前三家走 `:batch`、qwen 為 owner 指定觀察員（無 batch 版）。
-JURY_MEMBERS: tuple[str, ...] = (
-    "deepseek/deepseek-v4.1-flash",
-    "z-ai/glm-5.3-flash",
-    "openai/gpt-6-luna",
-    "qwen/qwen3.7-flash",
-)
+# 評審團成員。歷史：C8 初版為四人（deepseek/glm/gpt-6-luna/qwen3.7）多數決；
+# 2026-10-01 owner 裁定收斂為單一評審 qwen3.7-flash（gold v2 上 0.852 並列第一、
+# 過 0.80 門檻；成本 4→1）。多數決機制保留——未來要擴編只需改這裡。
+JURY_MEMBERS: tuple[str, ...] = ("qwen/qwen3.7-flash",)
 # 沒有 `:batch` 變體的成員：任何模式都用原價同步版。
 NON_BATCH_MEMBERS: frozenset[str] = frozenset({"qwen/qwen3.7-flash"})
 BATCH_SUFFIX = ":batch"
