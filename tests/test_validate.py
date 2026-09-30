@@ -504,8 +504,8 @@ def test_scores_document_validates_against_schema() -> None:
     assert document.meta.judge.kind == "llm-jury"
     assert document.meta.kind == "community-sentiment"
     assert len(document.models) >= 1
-    # 分數是公式算出來的社群資料，未經 C5 校準，必須如實標示。
-    assert document.meta.judge.calibrated is False
+    # C5 gold v2 驗證過關（overall 0.8174），owner 認可 2026-09-30 後為 true。
+    assert document.meta.judge.calibrated is True
     # 窗口偏誤說明必須在（C4 產出的 notes 含「窗口」字樣）。
     assert "窗口" in document.meta.notes
     # 站方表格欄位由 meta.dimensions 驅動。

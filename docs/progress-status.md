@@ -30,7 +30,8 @@ minimax-m3／nemotron-3.5-lightning）逐則 API 標註、溫度 0、v1.2 規則
 評審團（`llm-jury@cd50a7e9`）vs gold（n=115，詳 `docs/calibration-report.md`）：
 
 ```
-overall        0.8174 ✅（門檻 0.80；laya 只有 0.4424）
+overall        0.8174 ✅（門檻 0.80。laya 的 0.4424 是在已作廢的舊 gold 上量得，
+               與本結果沒有直接對比，不得併列解讀）
 quality        0.7652 ❌（常數ND baseline 0.7565——僅小幅勝出）
 speed          0.9652 ✅
 tokenEfficiency 0.9739 ✅（但低於常數 baseline 0.9913）
@@ -66,8 +67,8 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
   quality 是唯一有足夠樣本（28 列）且勝過 baseline 的面向（0.7652 vs 0.7565）——
   未來若要加強，收集「有聊智能品質」的貼文最能補強該面向。
 - **單一評審收斂**：juryVotes 逐票數據累積中，等一致率樣本夠多再評估 qwen3.7-flash 單飛
-- 排程頻率（每日／每週）未定；`meta.judge.calibrated` 維持 `false`，待 owner 認可新
-  門檻下的驗證結果後再改 `true`（plan.md 裁定 5）
+- 排程頻率（每日／每週）未定；`meta.judge.calibrated` 已改 `true`（owner 認可
+  2026-09-30，plan.md 裁定 5）——`build.py` 預設值已同步改 `true`，重跑 build 不會回退
 - C2 歸屬漏洞：清單外新模型（Astra／Fable／Luna…）的貼文會進池，清單要定期擴充或
   collect 端加黑名單——尚未開任務卡
 - jason-lab 端尚未動工；`data/scores.json`（真資料版）＋種子 `data/samples/` 都是它可用的開發資料
