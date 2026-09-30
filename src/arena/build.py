@@ -35,11 +35,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from arena.jury import JURY_MEMBERS, jury_judge
 from arena.schema import (
     DEFAULT_WEIGHTS,
     FACET_DIMENSION_IDS,
+    JURY_SCHEMA_VERSION,
     OVERALL_VOTE_ID,
-    SCHEMA_VERSION,
     VOTE_IDS,
 )
 from arena.validate import validate_path
@@ -55,17 +56,9 @@ DEFAULT_MODELS = Path("data/models.json")
 # 預設輸出：網站唯一需要的輸入檔。
 DEFAULT_OUTPUT = Path("data/scores.json")
 
-# 評分器身分（R1 選型）：模型名 + pin 住的完整 revision。
-JUDGE_MODEL = "laya"
-JUDGE_REVISION = "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851"
-# evidence 的 ``judge`` 欄實際寫的是短 sha（``laya@55cf4c4``，見 score.py）；
-# 兩種寫法都視為同一個評分器。
-_CANONICAL_JUDGES = frozenset(
-    {
-        f"{JUDGE_MODEL}@{JUDGE_REVISION}",
-        f"{JUDGE_MODEL}@{JUDGE_REVISION[:7]}",
-    }
-)
+# 評分器身分（C8 起改 LLM 評審團，2026-09-30；laya 已淘汰——judge 不符的列會被
+# 跳過並計入 mismatched 統計，重跑 `arena score` 即回歸）。
+JURY_JUDGE_ID = jury_judge(JURY_MEMBERS)  # 例：llm-jury@cd50a7e9
 
 # 偽樣本數收縮常數：越大越往 50 靠攏（實作裁定第 10 條）。
 K_SHRINKAGE = 10
@@ -145,10 +138,10 @@ def wilson_lower_bound(positive: int, sample_size: int) -> float:
 
 
 def _is_countable(row: EvidenceRow) -> bool:
-    """可納入聚合的列：評分器正確且六題投票完整。"""
+    """可納入聚合的列：評分器為現任評審團且六題投票完整。"""
     if row.votes is None:
         return False
-    if row.judge not in _CANONICAL_JUDGES:
+    if row.judge != JURY_JUDGE_ID:
         return False
     return set(row.votes) == set(VOTE_IDS)
 
@@ -349,15 +342,15 @@ def build_document(
     entries.sort(key=lambda item: (-item["score"], item["id"]))
 
     meta: dict[str, Any] = {
-        "schemaVersion": SCHEMA_VERSION,
+        "schemaVersion": JURY_SCHEMA_VERSION,
         "generatedAt": resolved_generated,
         "windowDays": window_days,
         "kind": KIND,
         "disclaimer": DISCLAIMER,
         "judge": {
-            "model": JUDGE_MODEL,
-            "revision": JUDGE_REVISION,
-            # C5 校準未通過前一律 false（不得謊稱）。
+            "kind": "llm-jury",
+            "members": list(JURY_MEMBERS),
+            # gold 考卷驗證通過前一律 false（不得謊稱）。
             "calibrated": False,
         },
         "dimensions": [
