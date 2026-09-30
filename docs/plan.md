@@ -38,7 +38,16 @@
     "windowDays": 30,
     "kind": "community-sentiment",              // 明確標示不是 benchmark
     "disclaimer": "社群聲量代理指標，非 benchmark",
-    "judge": { "model": "laya", "revision": "<sha>", "calibrated": false },
+    "judge": {                                 // C8 起改 LLM 評審團（laya 已淘汰，見待決事項）
+      "kind": "llm-jury",
+      "members": [                             // 四家皆非 gold 標註家族外的重複（qwen3.7 為 owner 指定觀察員）
+        "deepseek/deepseek-v4.1-flash",
+        "z-ai/glm-5.3-flash",
+        "openai/gpt-6-luna",
+        "qwen/qwen3.7-flash"
+      ],
+      "calibrated": false                      // gold 考卷驗證通過前如實 false
+    },
     "dimensions": [                              // 站方表格欄位的資料來源
       { "id": "quality",         "label": "智能" },
       { "id": "speed",           "label": "速度" },
@@ -89,6 +98,8 @@
   "postedAt": "…",
   "text": "…",
   "votes": {                   // 未評分時整個 votes 為 null（C2 落地狀態）
+    // C8 起：多數決結果。prob = 同票比例（3/4=0.75、4/4=1.0）；
+    // 2/4 平手 → 該面向 label 與 prob 皆為 null（視同資料不足，build 自動排除）
     "overall":          { "label": "positive|negative|neutral", "prob": 0.87 },
     "quality":          { "label": "positive|negative|not-discussed", "prob": 0.81 },
     "speed":            { "label": "…", "prob": 0.66 },
@@ -96,7 +107,16 @@
     "tokenUsage":       { "label": "…", "prob": 0.49 },
     "priceValue":       { "label": "…", "prob": 0.90 }
   },
-  "judge": "laya@<sha>" | null
+  "juryVotes": {               // C8 起必填（votes 非 null 時）：每位評審的原始票，供日後收斂單一評審用
+    "overall": {
+      "deepseek-v4.1-flash": "positive",
+      "glm-5.3-flash": "positive",
+      "gpt-6-luna": "negative",
+      "qwen3.7-flash": "positive"
+    }
+    // …其餘五面向同構；鍵 = members id 的短名（/ 後段）
+  },
+  "judge": "llm-jury@<membersHash 前 8 碼>" | null   // 例：llm-jury@a1b2c3d4
 }
 ```
 
@@ -132,6 +152,20 @@
 11. **`data/evidence/` 只放真實蒐集資料**（PM 裁定，2026-09-29）：種子範例移至
     `data/samples/evidence.sample.jsonl`（站方開發/schema 示例用）。score/build 的
     預設 glob 只讀 `data/evidence/*.jsonl`，假資料不得混入聚合與溯源連結。
+12. **LLM 評審團契約（v1.2，2026-09-30 新增）**：
+    - 四位評審如 `meta.judge.members`；schemaVersion 升 1.2（`extra=forbid`，
+      舊 1.1 檔案的 `judge`/`juryVotes` 欄位差異由 validate 分版本處理）。
+    - 每位評審**獨立呼叫**（同 prompt、同 rubric、JSON 輸出），不得互看；
+      每面向取多數，`prob`=同票比例；**2/4 平手 → 該面向 label/prob 記 null**。
+    - `juryVotes.<facet>.<member短名>` 必須保留原始票；`judge` 欄位格式
+      `llm-jury@<membersHash前8碼>`（membersHash=members 排序後串接的 sha256）。
+    - 呼叫走 OpenRouter `chat/completions`；**預設同步呼叫**（owner 裁定 2026-09-30，
+      batch 非同步等太久）；`--batch` 可切 batch API（半價、24h 內回，實測小批次
+      也要 ~8 分鐘/家）。API key 從環境變數
+      `OPENROUTER_API_KEY` 讀；缺 key 時 score 明確報錯不靜默降級。
+    - 成本：四家一趟 ≈ $0.065（216 則 × 6 題，state~400/rubric~350/out~120 tok）。
+    - 動機：owner 計畫先四人團累積數據，之後收斂成單一評審——收斂依據 =
+      gold 考卷準確率＋與多數決的長期一致率（所以 `juryVotes` 不可省略）。
 
 ## 任務拆分
 
@@ -155,6 +189,16 @@
 ### C3 — score ✅（overall 總評完成；多維度升級見 A3）
 - 快層：JEV 逐則分類 + 校準機率（laya、`answer_confidence`，見 `docs/research/jev-scoring.md`）
 - **驗收**：對固定輸入集重跑，分數變動在容許範圍內（可重現）——已達（2308e40）
+- **⚠️ 2026-09-30 裁定：laya 淘汰**（gold 上 0.4424，官方同族任務 self-eval 0.442，
+  domain fit 問題，見 `docs/research/laya-usage-accuracy.md`）。C3 的 laya 實作保留
+  在 git 歷史，score 改接 C8 評審團。
+
+### C8 — LLM 評審團 judge（2026-09-30 新增，取代 C3 的 laya）
+- score 改呼叫 OpenRouter 四人評審團（成員與契約見實作裁定第 12 條）；
+  schema v1.2（`juryVotes`、`meta.judge.kind`）
+- **驗收**：`validate` 過新舊兩版 schema；對 sample.jsonl 真跑四人團回填 votes＋juryVotes；
+  平手面向如實記 null；缺 `OPENROUTER_API_KEY` 時明確報錯；重跑同輸入 votes 一致（溫度 0）
+- gold 定案後另跑一次「評審團 vs gold」驗證（沿用 C5 門檻），結果寫 `docs/calibration-report.md`
 
 ### A3 — schema v1.1 多維度改造（2026-09-29 新增，C4/C5 的前置）
 - `schema.py`：evidence 改 `votes` map、scores 改開放 `dimensions`＋`meta.dimensions/weights/sourcesCovered`
@@ -181,7 +225,7 @@
 | HTTP | `httpx` | 簡潔、支援 async |
 | 驗證 | `pydantic` | schema 即文件，錯誤訊息清楚 |
 | 測試 | `pytest` | 標準選擇 |
-| 推論 | 本地跑 `laya`／`AgentJev-0.6B` | 量大、成本近零；避免用 router 做量產評分 |
+| 推論 | OpenRouter API（同步為預設） | C8 起改 LLM 評審團（四家 flash 同步 ≈ $0.13/趟；batch 半價可選，見實作裁定 12） |
 
 ## 待決事項
 
@@ -190,6 +234,12 @@
 - [x] JEV 具體選用（R1 定案 2026-09-29）：**`convaiinnovations/laya` 英文 checkpoint**，
       pin revision `55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851`，`choice` 題型三類態度，
       校準機率用 `answer_confidence`。詳見 `docs/research/jev-scoring.md`。
+      **→ 2026-09-30 淘汰**：C5 gold 上 0.4424、官方 self-eval 同族 0.442（domain fit），
+      見 `docs/research/laya-usage-accuracy.md`。
+- [x] judge 具體選用（2026-09-30 定案）：**LLM 四人評審團**（deepseek-v4.1-flash /
+      glm-5.3-flash / gpt-6-luna / qwen3.7-flash，全 `:batch`；qwen3.7 為 owner 指定
+      觀察員，長期目標收斂單一評審）。契約見實作裁定 12；名單挑選理由（避開 gold
+      標註家族、batch 限速、免費版限額）見對話紀錄與 `docs/research/laya-usage-accuracy.md` §5。
 - [x] 維度與公式定案（v1.1 定稿：5 面向＋總評、逐面向投票聚合，見實作裁定 8~10）
 
 ## 收集策略（R3 定案，2026-09-29；C2/C5 依此實作）

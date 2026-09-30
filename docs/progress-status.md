@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | fetch-models | `arena fetch-models` | ✅ 人工清單8模型＋OpenRouter 定價/context，缺欄標記、掛掉降級 | `16fa0a5` |
 | collect | `arena collect` | ✅ last30days 引擎（vendor，pin `084662b`）× reddit/hn/x；三態歸屬、去重、原子寫入 | `abf10af`＋C2b/C6 |
-| score | `arena score` | ✅ laya 六題 votes（現行 judge，**正面臨被淘汰**） | `2308e40`→`df8fc25` |
+| score | `arena score` | ✅ **C8：LLM 評審團**（deepseek-v4.1-flash／glm-5.3-flash／gpt-6-luna／qwen3.7-flash，batch＋多數決、schema v1.2）；laya 已淘汰（保留程式碼） | `2308e40`→C8（工作樹未 commit） |
 | build | `arena build` | ✅ votes→分數（K=10 收縮＋Wilson confidence），自動 validate | `67959d8` |
 | validate | `arena validate` | ✅ schema v1.1（pydantic，extra=forbid） | A2＋A3 |
 | calibrate | `python -m arena.calibrate sample/make-evals/stats` | ✅ 抽樣＋gold 工具 | `107764a` |
@@ -70,6 +70,9 @@ invoice／客服／安全／agent trace 的「該怎麼做」），不是「讀�
   分枝），清單要定期擴充或 collect 端加「其他厂商模型名」黑名單——尚未開任務卡
 - jason-lab 端尚未動工；`data/scores.json`（真資料版）＋種子 `data/samples/` 都是它可用的開發資料
 - `meta.judge.calibrated` 目前 `false`（laya 未過線）；換 judge 後要同步改 `plan.md` 的 judge 定義
+- **C8 換 judge 後 `arena build` 尚未跟上**（工作樹未 commit）：build 的 `_CANONICAL_JUDGES`
+  仍只認 laya、`meta.judge` 仍寫 laya 形狀；真跑評審團、要重跑 `arena build` 前得先更新它
+  （否則 llm-jury 的列會被當 judge 不符跳過）。屬 C8 後續步驟。
 
 ## 6. 快速上手指令
 

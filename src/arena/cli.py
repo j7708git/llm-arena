@@ -36,7 +36,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
 
 def cmd_score(args: argparse.Namespace) -> int:
-    """JEV 逐則評分（任務 C3，實作在 arena.score）。"""
+    """LLM 評審團逐則評分（任務 C8，實作在 arena.score）。"""
     return run_score(args)
 
 
@@ -46,7 +46,7 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    """檢查資料是否符合 schema v1.1（任務 A2）。
+    """檢查資料是否符合 schema v1.1／v1.2（任務 A2；C8 起支援評審團版）。
 
     合法回傳 0；任一檔案不合法回傳 1，並逐條列出「檔案：位置：問題」。
     """
@@ -65,13 +65,13 @@ def cmd_validate(args: argparse.Namespace) -> int:
         for error in errors:
             print(error, file=sys.stderr)
         print(
-            f"validate：{len(errors)} 個問題，資料不符合 schema v1.1。",
+            f"validate：{len(errors)} 個問題，資料不符合 schema（v1.1／v1.2）。",
             file=sys.stderr,
         )
         return EXIT_INVALID
 
     for path in checked:
-        print(f"OK {path}：符合 schema v1.1")
+        print(f"OK {path}：符合 schema（v1.1／v1.2）")
     return EXIT_OK
 
 
@@ -95,9 +95,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands: list[tuple[str, str, Callable[[argparse.Namespace], int]]] = [
         ("fetch-models", "更新模型清單與定價（人工清單 + OpenRouter）", cmd_fetch_models),
         ("collect", "抓取近 30 天社群貼文，落地為 data/evidence/*.jsonl", cmd_collect),
-        ("score", "以 JEV 對逐則貼文評分（含校準機率）", cmd_score),
+        ("score", "以 LLM 評審團對逐則貼文評分（含多數決聚合）", cmd_score),
         ("build", "由 evidence 聚合出 data/scores.json", cmd_build),
-        ("validate", "檢查資料是否符合 schema v1.1", cmd_validate),
+        ("validate", "檢查資料是否符合 schema（v1.1／v1.2）", cmd_validate),
     ]
 
     for name, help_text, handler in commands:
