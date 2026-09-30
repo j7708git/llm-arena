@@ -108,7 +108,9 @@ def main() -> int:
         golds, preds, source_of = [], [], []
         for row, record in pairs:
             golds.append(row["expected"][facet])
-            preds.append(record["votes"][facet]["label"])
+            pred = record["votes"][facet]["label"]
+            # 平手（label=None）視為「未作答」：一律算錯。
+            preds.append(pred if pred is not None else "__no_answer__")
             source_of.append(row["tags"][0] if row.get("tags") else "?")
         n = len(golds)
         acc = sum(1 for g, p in zip(golds, preds) if g == p) / n if n else 0.0
@@ -128,10 +130,13 @@ def main() -> int:
             f"{'✅' if passed else '❌'} |"
         )
 
-    # overall 混淆矩陣
+    # overall 混淆矩陣（未作答併入 no_answer 欄）
     golds = [row["expected"]["overall"] for row, _ in pairs]
-    preds = [record["votes"]["overall"]["label"] for _, record in pairs]
-    labels = LABELS["overall"]
+    preds = [
+        record["votes"]["overall"]["label"] or "__no_answer__"
+        for _, record in pairs
+    ]
+    labels = list(LABELS["overall"]) + ["__no_answer__"]
     lines += ["", "### overall 混淆矩陣（列=gold，欄=評審團）", ""]
     lines.append("| gold＼pred | " + " | ".join(labels) + " |")
     lines.append("| --- | " + " | ".join(["---"] * len(labels)) + " |")
@@ -145,11 +150,13 @@ def main() -> int:
         lines.append(f"| {g} | " + " | ".join(str(row_counts[p]) for p in labels) + " |")
     report["overallConfusion"] = confusion
 
-    # ECE 與單調性（overall；prob 只有 1.0 與 0.75 兩個值）
+    # ECE 與單調性（overall；prob 只有 1.0 與 0.75 兩個值；未作答不進 ECE）
     for facet in FACETS:
         buckets: dict[float, list[int]] = {}
         for row, record in pairs:
             prob = record["votes"][facet]["prob"]
+            if prob is None:
+                continue
             correct = int(record["votes"][facet]["label"] == row["expected"][facet])
             buckets.setdefault(round(prob, 4), []).append(correct)
         ece = 0.0
