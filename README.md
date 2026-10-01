@@ -9,6 +9,8 @@
 - 狀態：**v1.2 已上線**——CLI 五個子命令（`fetch-models`／`collect`／`score`／`build`／
   `validate`）皆已實作；C5 校準驗證已通過（gold v2、overall 0.8174 過關，
   owner 認可 2026-09-30，`meta.judge.calibrated: true`）。
+  2026-10-01 完成 C9：清單 v2（15 席）＋ Reddit／HN 留言逐則＋歸屬改版本精確比對，
+  新池 `data/evidence/2026-10-01.jsonl` 已產（126 筆，全部留言級／推文級且 url 可連回）。
   詳見 `docs/plan.md` 與 `docs/calibration-report.md`
 
 ## 產出什麼
@@ -16,12 +18,22 @@
 | 檔案 | 內容 |
 | --- | --- |
 | `data/scores.json` | 算好的分數（網站唯一需要的輸入） |
-| `data/evidence/*.jsonl` | 原始貼文與引用，讓每個分數都可回溯審核 |
+| `data/evidence/*.jsonl` | 原始**留言／推文**與引用，讓每個分數都可回溯審核 |
+| `data/evidence/archive/` | 舊池（2026-09-29，粒度為「一個討論串」）留作稽核對照，不入聚合 |
 
 ## 方法（概要）
 
-1. **模型清單**：以人工維護清單為主，附掛 OpenRouter 公開 API `https://openrouter.ai/api/v1/models` 的定價與 context length（用 API，不爬 HTML）。
+1. **模型清單（v2，15 席）**：以人工維護清單為主，附掛 OpenRouter 公開 API `https://openrouter.ai/api/v1/models` 的定價與 context length（用 API，不爬 HTML）。
+   清單 2026-10-01 換血：移除 `claude-sonnet-4`／`gpt-5`／`deepseek-v3.1`
+   （舊世代且被引擎模糊比對嚴重污染，X 池實測 Sonnet 4 命中 0/2、GPT-5 命中 1/7），
+   保留 `gemini-2.5-pro` 等 5 席，新增研究報告的 A 檔 5 席＋B 檔 5 席
+   （`docs/research/model-roster-survey.md`，契約見 `docs/plan.md` 裁定 14）。
 2. **社群收集**：排程 agent 使用 `last30days` 技能抓近 30 天社群討論（Reddit／HN／X）。
+   Reddit／HN 改「**留言逐則**」：主貼不評分，每個討論串取熱門前 10 則**留言**，
+   每則留言各自成一筆 evidence（裁定 13）；X 維持每則推文一筆。
+   歸屬規則已收緊為**版本精確比對**（裁定 14）：只提品牌字無版本號 → 丟；
+   提到「家族＋版本」但該版本不在清單 → 丟（misattributed）；暱稱必綁世代
+   （`GPT-6 Sol` ≠ `GPT-5.6 Sol`，`GLM 5.3 Prime` ≠ `GLM 5.3 Flash`）。
 3. **評分（LLM 單一評審）**：`qwen3.7-flash`（經 OpenRouter）對逐則貼文**一次**回答
    六題（overall＋五面向、溫度 0、JSON 輸出）。
    歷史：初版為四人評審團多數決，2026-10-01 owner 裁定收斂為單一評審——
@@ -50,6 +62,16 @@
 - [x] 面向驗收門檻（owner 裁定 2026-10-01）：五面向改比「accuracy 勝過常數
       not-discussed baseline」（not-discussed 佔九成時絕對 0.80 是誤導性指標）；
       有討論列數 <10 的面向標『樣本不足』，站方呈現須標註各面向可信度。
+
+## 資料現況（2026-10-01，C9 之後）
+
+- `data/models.json`：**15 席**，OpenRouter 實查全部有定價與 context（0 缺欄）。
+- `data/evidence/2026-10-01.jsonl`：**126 筆**（reddit 54／x 50／hn 23），
+  每筆的 url 都可連回、text 都精確提及該 row 的模型版本
+  （`.venv/bin/python tools/verify_pool.py data/evidence/2026-10-01.jsonl` 可複驗）。
+- `data/scores.json`：**仍是舊池的榜單**（8 席、含已移除的舊世代模型）。`arena score`
+  需要 `OPENROUTER_API_KEY`；拿到 key 後依序跑 `score` → `build` → `validate` 即換成
+  v2 榜單（聚合公式不動）。
 
 ## 目錄結構
 
@@ -101,8 +123,8 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 # 對預設路徑 data/evidence/*.jsonl 逐則評分
 .venv/bin/arena score
 
-# 指定單一檔
-ARENA_EVIDENCE_FILES=data/evidence/2026-09-29.jsonl .venv/bin/arena score
+# 指定單一檔（ARENA_EVIDENCE_FILES 以 : 分隔多個路徑）
+ARENA_EVIDENCE_FILES=data/evidence/2026-10-01.jsonl .venv/bin/arena score
 
 # 重評所有行，包含已有 votes 的行（預設會跳過）
 .venv/bin/arena score --force
@@ -111,8 +133,8 @@ ARENA_EVIDENCE_FILES=data/evidence/2026-09-29.jsonl .venv/bin/arena score
 評分結果把 `votes`（六題標籤）、`juryVotes`（評審的原始票，現為單一評審）與
 `judge`（`llm-jury@<membersHash 前 8 碼>`，現為 `llm-jury@557e1059`）回填進
 evidence。輸出採**原子寫入**（先寫同目錄暫存檔再 rename），中途失敗不會留下
-半截 jsonl；已有 `votes` 的行會跳過，因此可重複執行。單一評審跑完全池
-（216 則 × 6 題）成本約 **$0.008**（原四人多數決為 $0.13）。
+半截 jsonl；已有 `votes` 的行會跳過，因此可重複執行。單一評審成本約
+**每千則 $0.04**（216 則 × 6 題約 $0.008；原四人多數決為 $0.13）。
 評審名單與契約見 `docs/plan.md` 實作裁定 12。
 
 > 舊評分器 `laya`（JEV 家族、CPU 本地推論）的安裝與調校說明已隨其淘汰移除；
@@ -204,7 +226,7 @@ PY
 .venv/bin/arena collect
 
 # 只抓指定模型（id 或 name），放大間隔
-.venv/bin/arena collect --models "Claude Sonnet 4" "GPT-5" --sleep 35
+.venv/bin/arena collect --models "Claude Opus 5.5" "GPT-6 Sol" --sleep 35
 
 # 高召回模式與窗口天數
 .venv/bin/arena collect --deep --days 60
@@ -226,20 +248,31 @@ X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控）�
 
 流程重點：
 
+- **粒度：留言逐則（裁定 13）**：Reddit／HN 的**主貼不評分**（社群主貼多為提問、
+  不帶態度），每個討論串改取**熱門前 10 則留言**，**每則留言各自成一筆**：
+  `url` 是留言永久連結、`author` 是留言者、`postedAt` 是留言時間、`text` 是留言原文。
+  留言不足 10 則照實取，0 則則該串不產生資料。X 維持每則推文一筆（X 池無留言結構）。
+  留言來源：Reddit `.json`（本環境 keyless 一律 403，自動退到 Reddit 仍免 key 開放的
+  shreddit 留言端點 `/svc/shreddit/comments/r/<sub>/t3_<id>`，已實測可用）、
+  HN Algolia `/api/v1/items/<id>`（免 key）。> HN 不公開留言分數，故 HN 依 Algolia
+  回傳的樹狀順序（上層留言優先）取前 10 則，不是依熱門度排序。
 - **過濾**：只留 `reddit`／`hackernews`／`x`（`source` 白名單，擋掉 jobs 等雜訊）；
   排除非英文貼文（拉丁字母比例 < 0.6；評分 rubric 為英文）；缺 `url`／時間者丟棄。
-  最後做**歸屬三態**判定：同時提及兩個以上設定模型名 → 丟（歸屬不明）；貼文未提
-  query 模型、卻提及**其他**模型名（比對模型全名、id 末段、以及去廠牌首詞的版本後綴，
-  例：`Claude Sonnet 5.5` 也接受 `Sonnet 5.5`）→ 丟並計入 `誤歸屬`（引擎模糊比對造成
-  的錯歸屬，例：查 `Claude Sonnet 4` 回傳的 `Sonnet 5.5` 貼文）；兩者皆未出現 → 保留，
-  靠引擎 relevance（例如留言上下文只寫「this model」）。
-- **`text`**：`title` ＋ `summary` 合成後**截斷至 1200 字元**（控制單則的評分
-  prompt 大小與成本，且先截斷可讓校準用 `--slice tag=long` 單獨量長文子集）。
+- **歸屬：版本精確比對（裁定 14，取代 C6 的歸屬三態）**：文字必須以**精確版本**提及
+  query 模型才採計（`Sonnet 5.5` 命中 `claude-sonnet-5.5`、`gpt-6-astra` 也算），
+  版本後不得再接數字，故 `5.5` 不會命中 `5.55`。只提品牌字無版本號 → 丟
+  （`只提品牌字`）；提到「家族＋版本」但該版本不在清單（`Gemini 3.8`、`Sonnet 4.5`）
+  → 丟並計入 `誤歸屬`；完全沒提模型 → 丟（`沒提任何模型`）。暱稱與變體後綴
+  （Prime／Flash／FlashX／Max／Sol／Luna／Terra／Astra）**必須綁定世代**：
+  `GPT-6 Sol` ≠ `GPT-5.6 Sol`、`GLM 5.3 Prime` ≠ `GLM 5.3 Flash`；只有該世代在清單
+  裡獨佔一席時，社群只寫世代也算命中（例：`Gemini 2.5`）。
+- **`text`**：X 是 `title` ＋ `summary` 合成、Reddit／HN 是留言原文，一律
+  **截斷至 1200 字元**（控制單則的評分 prompt 大小與成本）。
 - **`hash`**：正規化文字（小寫、空白壓扁）的 sha256，**跨所有 evidence 檔去重**
   （同批與跨檔都比對，跨來源轉貼亦然），重複只留一筆。
-- **補缺**：`author` 用 Reddit 公開 JSON／貼文摘要的 `/u/` 回填，HN 討論頁連結與
-  作者用 Algolia API 以標題查回（皆免 key）；補不到就留 `null`，不阻擋流程。
-  X 的作者已由永久連結取得，不走補缺。`votes`／`judge` 由 `arena score`（C8 評審團）回填。
+- **補缺**：Reddit／HN 的 row 是留言，`author` 與留言永久連結都由留言 API 直接帶回；
+  只有留言者未知（`[deleted]`／機器人）才留 `null`，不阻擋流程。X 的作者由永久連結
+  取得。`votes`／`judge` 由 `arena score`（C8 評審團）回填。
 - **`source_status`**：只有 `ok`／`no-results` 視為正常；`skipped-unconfigured`
   是預期跳過（見上）；`rate-limited` 等失敗狀態會退避重試
   （`--retries`／`--retry-backoff`），仍失敗則明確警告、不當成「沒討論」。
@@ -249,12 +282,15 @@ X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控）�
   停止連網；確定要連網可設 `ARENA_ALLOW_NETWORK=1`。
 
 Reddit 的 keyless 路徑會限流；連續抓多個模型時請保留 `--sleep`（預設 30 秒）。
-本機實測 Reddit 公開 JSON 端點常回 403，故 Reddit `author` 多半為 `null`。
 
 ```bash
 # 產生後驗證（結構合法但未評分的 evidence 也應回 0）
-.venv/bin/arena validate data/evidence/2026-09-29.jsonl
+.venv/bin/arena validate data/evidence/*.jsonl
 ```
+
+舊池（`data/evidence/2026-09-29.jsonl`，粒度為「一個討論串」且歸屬規則過寬）
+已依裁定 14 搬至 `data/evidence/archive/`。`build`／`score` 的 glob 是
+`data/evidence/*.jsonl`（非遞迴），**archive 不會被掃到**，可留作稽核對照。
 
 ### build（聚合成 scores.json，任務 C4）
 
@@ -324,7 +360,7 @@ export OPENROUTER_API_KEY=sk-or-...
 
 # 4. 對同一批貼文跑 arena score 後，做「評審團 vs gold」驗證
 .venv/bin/python tools/eval_jury_vs_gold.py --gold data/calibration/gold-v2.jsonl \
-  --scored data/evidence/2026-09-29.jsonl \
+  --scored data/evidence/archive/2026-09-29.jsonl \
   --out docs/calibration-report.md --json docs/calibration-report.json
 ```
 

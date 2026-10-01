@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -25,7 +26,10 @@ from arena.validate import _evidence_model_for, validate_path
 ROOT = Path(__file__).resolve().parents[1]
 SEED_SCORES = ROOT / "data" / "scores.json"
 SEED_EVIDENCE = ROOT / "data" / "samples" / "evidence.sample.jsonl"
-REAL_EVIDENCE = ROOT / "data" / "evidence" / "2026-09-29.jsonl"
+# C9：舊池（粒度為「一個討論串」、清單 v1）已搬進 archive，仍要能通過 validate。
+ARCHIVED_EVIDENCE = ROOT / "data" / "evidence" / "archive" / "2026-09-29.jsonl"
+# C9 起的主力池（留言級、清單 v2）。缺檔時跳過（尚未重收集的乾淨 checkout）。
+NEW_EVIDENCE = ROOT / "data" / "evidence" / "2026-10-01.jsonl"
 
 
 def load_seed_scores() -> dict:
@@ -86,9 +90,42 @@ def test_old_and_new_evidence_versions_are_recognised() -> None:
 
 
 def test_real_laya_evidence_file_still_passes() -> None:
-    """驗收：舊 1.1 evidence（data/evidence/2026-09-29.jsonl）仍要通過。"""
-    assert validate_path(REAL_EVIDENCE) == []
-    assert main(["validate", str(REAL_EVIDENCE)]) == 0
+    """驗收：舊 1.1 evidence（archive 內的 2026-09-29.jsonl）仍要通過。"""
+    assert validate_path(ARCHIVED_EVIDENCE) == []
+    assert main(["validate", str(ARCHIVED_EVIDENCE)]) == 0
+
+
+def test_new_evidence_pool_passes() -> None:
+    """C9 新池（留言級、清單 v2）也必須通過 validate。"""
+    if not NEW_EVIDENCE.exists():  # pragma: no cover - 尚未重收集的 checkout
+        pytest.skip("新池尚未產生")
+    assert validate_path(NEW_EVIDENCE) == []
+    assert main(["validate", str(NEW_EVIDENCE)]) == 0
+
+
+def test_new_pool_rows_are_comment_level() -> None:
+    """C9：Reddit／HN 的 row 必須是留言（url 指向留言，不是主貼）。"""
+    if not NEW_EVIDENCE.exists():  # pragma: no cover - 尚未重收集的 checkout
+        pytest.skip("新池尚未產生")
+    rows = [
+        json.loads(line)
+        for line in NEW_EVIDENCE.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert rows
+    for row in rows:
+        if row["source"] == "reddit":
+            # Reddit 留言永久連結在主貼路徑之後多一段留言 id
+            # （兩種形式都見：``.../comment/<id>/`` 與 ``.../<slug>/<id>/``）。
+            path = urlparse(row["url"]).path.strip("/").split("/")
+            post_index = path.index("comments") if "comments" in path else -1
+            assert post_index >= 0, row["url"]
+            # r/<sub>/comments/<post_id>/[<slug>/]<comment_id>
+            assert len(path) - post_index - 1 >= 3, row["url"]
+        elif row["source"] == "hn":
+            assert "news.ycombinator.com/item?id=" in row["url"], row["url"]
+        else:
+            assert row["source"] == "x"
 
 
 def test_v12_evidence_passes(tmp_path: Path) -> None:
@@ -520,18 +557,30 @@ def test_scores_document_validates_against_schema() -> None:
         assert set(model.dimensions) == declared
 
 
+def _resolve_evidence_ref(ref: str) -> Path:
+    """把 evidence 參照（``evidence/<檔名>#l<行號>``）解析成實際路徑。
+
+    C9 起舊池搬進 ``data/evidence/archive/``（不入 build 的 glob），所以解析時
+    除了 ``data/<file_part>`` 也要能命中 ``data/evidence/archive/<檔名>``。
+    """
+    file_part, _, _ = ref.partition("#l")
+    direct = SEED_SCORES.parent / file_part
+    if direct.exists():
+        return direct
+    archived = SEED_SCORES.parent / "evidence" / "archive" / Path(file_part).name
+    return archived
+
+
 def test_seed_evidence_refs_point_to_real_lines() -> None:
     """每個 model 的 evidence 參照都要真的指向 evidence 檔的對應行與模型。"""
     scores = load_seed_scores()
-    # C4 產出的 evidence 參照格式為 `evidence/<檔名>#l<行號>`，故基準目錄是 data/。
-    evidence_dir = SEED_SCORES.parent
 
     for model in scores["models"]:
         assert model["evidence"], f"{model['id']} 沒有 evidence 參照"
         for ref in model["evidence"]:
-            file_part, _, line_part = ref.partition("#l")
+            _, _, line_part = ref.partition("#l")
             line_number = int(line_part)
-            evidence_path = evidence_dir / file_part
+            evidence_path = _resolve_evidence_ref(ref)
             assert evidence_path.exists(), f"找不到 evidence 檔：{ref}"
 
             lines = [

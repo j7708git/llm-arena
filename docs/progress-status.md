@@ -9,16 +9,20 @@
 
 | 模組 | 命令 | 狀態 | commit |
 | --- | --- | --- | --- |
-| fetch-models | `arena fetch-models` | ✅ 人工清單8模型＋OpenRouter 定價/context，缺欄標記、掛掉降級 | `16fa0a5` |
-| collect | `arena collect` | ✅ last30days 引擎（vendor，pin `084662b`）× reddit/hn/x；三態歸屬、去重、原子寫入 | `abf10af`＋C2b/C6 |
-| score | `arena score` | ✅ **C8：LLM 評審團**（deepseek-v4.1-flash／glm-5.3-flash／gpt-6-luna／qwen3.7-flash，batch＋多數決、schema v1.2）；laya 已淘汰（保留程式碼） | `2308e40`→C8（工作樹未 commit） |
+| fetch-models | `arena fetch-models` | ✅ **人工清單 v2：15 模型**（保留 5＋A 檔 5＋B 檔 5）＋OpenRouter 定價/context，缺欄標記、掛掉降級；15 席於 2026-10-01 實查全部有定價（0 缺欄） | `16fa0a5`＋C9 |
+| collect | `arena collect` | ✅ last30days 引擎（vendor，pin `084662b`）× reddit/hn/x；**C9：Reddit／HN 留言逐則（每串熱門前 10 則）、歸屬改版本精確比對**、去重、原子寫入 | `abf10af`＋C2b/C6＋C9 |
+| score | `arena score` | ✅ **C8：LLM 評審團**（現為 qwen3.7-flash 單一評審，schema v1.2）；laya 已淘汰（保留程式碼） | `2308e40`→C8→單飛 |
 | build | `arena build` | ✅ votes→分數（K=10 收縮＋Wilson confidence），自動 validate | `67959d8` |
-| validate | `arena validate` | ✅ schema v1.1（pydantic，extra=forbid） | A2＋A3 |
+| validate | `arena validate` | ✅ schema v1.1／v1.2（pydantic，extra=forbid） | A2＋A3 |
 | calibrate | `python -m arena.calibrate sample/make-evals/stats` | ✅ 抽樣＋gold 工具 | `107764a` |
 
-真資料池：`data/evidence/2026-09-29.jsonl` **216 筆**（reddit 82／hn 77／x 57，8 模型各 20~35 筆），
-全部已帶 laya votes。榜單 `data/scores.json` 是 laya votes 的聚合——**若 judge 換人，重跑
-`arena score`＋`arena build` 即可，聚合公式不動**。
+**池現況（C9）**：
+
+- 舊池 `data/evidence/2026-09-29.jsonl`（216 筆，粒度為「一個討論串」、8 模型）
+  已搬至 **`data/evidence/archive/2026-09-29.jsonl`**（裁定 14：粒度與清單都變了，
+  不清洗重用）。`build`／`score` 的 glob 是 `data/evidence/*.jsonl`（非遞迴），
+  archive **不入聚合**，只留作稽核對照。
+- 新池（2026-10-01 重收集）為**留言級**、清單 v2 15 席，實際筆數與分布見本單第 7 節。
 
 ## 2. C5 校準：C8 評審團驗證結果（2026-09-30，gold v2 定案）
 
@@ -61,6 +65,15 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
 
 ## 5. 進行中／待決
 
+- **2026-10-01 新裁定（owner，網站上線後發現榜單被張冠李戴污染）**：
+  1. 評分粒度改「留言逐則」——Reddit/HN 主貼不評分，每串取熱門前 10 則留言各自成
+     row；X 照舊（裁定 13，plan.md）。
+  2. 清單 v2——移除 Sonnet 4／GPT-5／DeepSeek V3.1，保留 Gemini 2.5 Pro（X 上真討論），
+     新增 A 檔＋B 檔共 10 個新模型（裁定 14，plan.md；證據見
+     `docs/research/model-roster-survey.md`，清單確認以 X 池為準）。
+  3. 歸屬規則收緊：版本精確比對、品牌字無版本丟、清單外丟、alias map（裁定 14）。
+  4. 舊池不清洗重用，搬 `data/evidence/archive/`，以新規則重收集。
+  任務卡 `.openchamber/plans/llm-arena-c9-collect-v2.md`；**實作狀態見第 7 節**。
 - **面向門檻設計（已裁定 2026-09-30）**：overall ≥ 0.80；五面向改「accuracy 須勝過常數
   ND baseline」，有討論列數 <10 的面向標『樣本不足』（speed 7／tokenEfficiency 1／
   tokenUsage 2／priceValue 9 皆屬此類，呈現須標可信度）。新門檻下總判定 ✅ 過關。
@@ -73,17 +86,78 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
   未來每次跑分持續觀察，若準確率跌破門檻再議擴編。
 - 排程頻率（每日／每週）未定；`meta.judge.calibrated` 已改 `true`（owner 認可
   2026-09-30，plan.md 裁定 5）——`build.py` 預設值已同步改 `true`，重跑 build 不會回退
-- C2 歸屬漏洞：清單外新模型（Astra／Fable／Luna…）的貼文會進池，清單要定期擴充或
-  collect 端加黑名單——尚未開任務卡
+- C2 歸屬漏洞**已由裁定 14 收緊**（C9 落地）：清單外的「家族＋版本」貼文一律
+  `misattributed` 丟棄，不再需要另開黑名單任務卡。但清單本身仍需定期擴充——
+  新模型的討論在過嚴規則下會全被丟掉，直到它進 `config/models.yaml`
 - jason-lab 端尚未動工；`data/scores.json`（真資料版）＋種子 `data/samples/` 都是它可用的開發資料
 
-## 6. 快速上手指令
+## 7. C9 實作現況（2026-10-01，清單 v2＋留言逐則）
+
+**程式面**（全部完成，`pytest` 231 passed 3 skipped）：
+
+- `config/models.yaml`：15 席＝保留 5（sonnet-5.5／gpt-6-sol／gemini-2.5-pro／
+  grok-4.7／glm-5.3-prime）＋A 檔 5（opus-5.5／sonnet-5／gpt-6-astra／glm-5.3-flash／
+  deepseek-v4.1-flash）＋B 檔 5（qwen3.8-max-0902／opus-5／kimi-k3／claude-fable-5.1／
+  gpt-5.6-luna）。`arena fetch-models` 實查 15 席**全部有定價與 context**（0 缺欄）。
+- `collect.py` 歸屬：`classify_attribution()` 取代 C6 歸屬三態，比對鍵是
+  `家族/等級/版本/變體`（`model_keys()`）。版本後不得再接數字（`5.5` 不命中 `5.55`）；
+  品牌字無版本 → `dropped_brand_only`；清單外版本 → `misattributed`；沒提模型 →
+  `dropped_no_mention`。暱稱綁世代（`GPT-6 Sol` ≠ `GPT-5.6 Sol`）；
+  變體只在**同世代在清單裡不只一席**時才強制（`GLM 5.3` 有 Prime+Flash → 不接受
+  裸世代；`Gemini 2.5` 僅 pro 一席 → 接受裸世代）。
+- `enrich.py` 新增 `HttpCommentFetcher`：Reddit 每串熱門前 10 則留言
+  （依 score 排序）、HN 前 10 則（Algolia `items/<id>`）；`build_comment_records()`
+  讓每則留言各自成 evidence row（url/author/postedAt/text 取自留言）。
+
+**實測到的三個現實落差（與 plan.md 契約的差異，如實記錄）**：
+
+1. **Reddit `.json` 端點在本環境 keyless 一律 403**（2026-10-01 實測：換 UA、
+   `old.reddit`、`api.reddit` 都一樣）。已實作 fallback 到 Reddit 仍免 key 開放的
+   shreddit 留言端點 `/svc/shreddit/comments/r/<sub>/t3_<id>`（回 HTML，留言內嵌為
+   `<shreddit-comment>` 元素，實測 200／22 則）。契約仍以 `.json` 為主路徑，
+   403 才退到 shreddit；解析層兩者輸出同一結構，測試各有一條。
+2. **HN 不公開留言分數**（Algolia 也沒有），所以「熱門前 10 則」在 HN 只能是
+   **Algolia 樹狀順序（上層留言優先、depth-first）的前 10 則**，不是依熱門度。
+   Reddit 有真 score，排序是真的。此差異需在站方文案說明「留言取樣方式」時一併交代。
+3. **研究報告 §5 的 `qwen/qwen3.8-max` 在 OpenRouter 不存在**（2026-10-01 實查
+   `/api/v1/models` 只有 `qwen/qwen3.8-max-0902` 與 `qwen/qwen3.8-max-prime`）。
+   清單採實際存在的 `qwen/qwen3.8-max-0902`，顯示名仍為 `Qwen3.8 Max`。
+
+**新池現況**（`data/evidence/2026-10-01.jsonl`，`arena collect` 單趟 ~24 分鐘）：
+
+- **126 筆**，來源 reddit 54／x 50／hn 23；**15 席全部有資料，無 0 筆者**。
+- 分布（留言級後每模型筆數落差較大）：Opus 5.5 **25**、GLM 5.3 Flash **16**、
+  Kimi K3 **13**、Sonnet 5.5 **9**、Grok 4.7 **9**、GPT-6 Astra **9**、
+  DeepSeek V4.1 Flash **9**、Opus 5 **8**、Gemini 2.5 Pro **7**、GPT-5.6 Luna **7**、
+  GPT-6 Sol **4**、GLM 5.3 Prime **4**、Qwen3.8 Max **3**、Sonnet 5 **2**、
+  Fable 5.1 **2**。`author` 無 null（留言 API 都帶回留言者）。
+- 收集摘要：15 模型、328 個討論串、無留言 49、**只提品牌字 409**、
+  **沒提任何模型 1582**、**誤歸屬 410**（清單外版本）、非英文 32。
+  規則擋掉的比例遠高於舊規則，但留下的每一筆都精確提及該模型版本。
+- 驗收工具 `tools/verify_pool.py`：全池 126 筆 **url 皆可連回（HTTP 200）**、
+  歸屬判定 0 不通過（複驗時另清掉 1 則已刪推文 `@rugnasyab/2105637339691426009`，
+  X 回 404）。
+
+**score／build 待 key**（2026-10-01）：本環境無 `OPENROUTER_API_KEY`，故
+`arena score` 如實報錯不降級（`arena build` 隨後因全池未評分而拒絕更新
+`data/scores.json`，原檔保持不變）。**`data/scores.json` 目前仍是舊池的榜單**
+（8 席、含已移除的 Sonnet 4／GPT-5／DeepSeek V3.1，且 evidence 參照指向已搬進
+archive 的 `2026-09-29.jsonl`）——拿到 key 後依序跑 `arena score` → `arena build`
+→ `arena validate` 才會換成 v2 榜單。無 key 期間的替代驗證（`/tmp` 內、不動 repo
+資料）：以固定輸出的假評審（等價溫度 0）跑 `score_paths` 兩趟 → 第二趟全跳過、
+`--force` 重評逐字一致；再用該 votes 走 `build_document` → 產出通過 validate、
+15 席全部入榜（`sourcesCovered=[hn, reddit, x]`）。
+
+## 8. 快速上手指令
 
 ```bash
 cd /home/user/workspace/agent/llm-arena
-.venv/bin/python -m pytest -q          # 172 passed, 1 skipped
+.venv/bin/python -m pytest -q          # 231 passed, 3 skipped
 .venv/bin/python -m arena.calibrate stats
-.venv/bin/arena validate data/scores.json data/evidence/2026-09-29.jsonl
+.venv/bin/arena fetch-models           # 清單 v2：15 席
+.venv/bin/arena collect                # 留言逐則重收集（慢，丟背景）
+.venv/bin/arena score                  # 需 OPENROUTER_API_KEY（qwen3.7-flash 單評審）
+.venv/bin/arena build && .venv/bin/arena validate data/scores.json data/evidence/*.jsonl
 # laya 評測（六題 CPU 很慢：110 筆跑 ~35 分鐘，务必丢背景）
 USE_TF=0 LAYA_DEVICE=cpu .venv/bin/laya-evals run data/calibration/gold.jsonl \
   --model english --device cpu --batch-size 8 --min-accuracy 0.80 --max-ece 0.10 \
@@ -93,3 +167,6 @@ USE_TF=0 LAYA_DEVICE=cpu .venv/bin/laya-evals run data/calibration/gold.jsonl \
 坑摘要（詳見 research 筆記）：laya 載入的 choice:11+ 溫度 warning 屬正常；
 score/laya-evals 在 CPU 都比網路宣稱慢（六題 ~3.5s/則）；test_cli dispatch 測試會
 呼叫真命令，conftest 已把預設路徑導到 tmp，改管線時別繞過它。
+**C9 新坑**：`arena collect` 一次跑 15 個模型、每模型一次引擎子行程＋每串兩次留言
+API（Reddit shreddit 頁近 1MB），整趟要 20~40 分鐘，必須丟背景輪詢；
+Reddit `.json` 403 已內建 fallback，不要以為抓不到資料是規則太嚴。

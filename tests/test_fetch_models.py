@@ -228,19 +228,40 @@ def test_fetch_models_http_error_raises() -> None:
 
 
 def test_load_real_config_is_valid() -> None:
+    """清單 v2（裁定 14）：5 個保留 ＋ A 檔 5 個 ＋ B 檔 5 個 ＝ 15 席。"""
     models = fm.load_manual_models(REAL_CONFIG)
 
     ids = [model["id"] for model in models]
-    assert 6 <= len(models) <= 8
+    assert len(models) == 15
     assert len(ids) == len(set(ids))
-    # 種子資料的 4 個模型必須在初始名單中
-    for seed in [
+    for model_id in (
+        # 保留
+        "anthropic/claude-sonnet-5.5",
+        "openai/gpt-6-sol",
+        "google/gemini-2.5-pro",
+        "x-ai/grok-4.7",
+        "z-ai/glm-5.3-prime",
+        # A 檔
+        "anthropic/claude-opus-5.5",
+        "anthropic/claude-sonnet-5",
+        "openai/gpt-6-astra",
+        "z-ai/glm-5.3-flash",
+        "deepseek/deepseek-v4.1-flash",
+        # B 檔
+        "qwen/qwen3.8-max-0902",
+        "anthropic/claude-opus-5",
+        "moonshotai/kimi-k3",
+        "anthropic/claude-fable-5.1",
+        "openai/gpt-5.6-luna",
+    ):
+        assert model_id in ids
+    # 裁定 14 明列移除的三席不得回來（舊世代＋引擎模糊比對的頭號受害者）。
+    for removed in (
         "anthropic/claude-sonnet-4",
         "openai/gpt-5",
-        "google/gemini-2.5-pro",
         "deepseek/deepseek-v3.1",
-    ]:
-        assert seed in ids
+    ):
+        assert removed not in ids
     for model in models:
         assert model["name"]
         assert model["provider"]

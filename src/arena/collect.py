@@ -8,20 +8,21 @@
    預設用 default depth（不用 ``--quick``：quick profile 每個 subquery 只留 2 個來源，
    x 會被優先序較高的 reddit／hn 擠掉）。
 2. **過濾**：只留 ``reddit``／``hackernews``／``x``（來源白名單，擋掉 jobs／github
-   等雜訊）；排除非英文貼文（laya 是英文 checkpoint，見 R1 筆記坑 7）；缺
-   url／缺時間的丟棄。接著套用**歸屬三態**判定（C6）：先沿用既有規則「同時提及
-   兩個以上清單模型名 → 丟」（歸屬不明）；再判斷貼文是否真的提到 query 模型，
-   若 query 未出現卻出現**其他**清單模型名，代表引擎的模糊比對把別人的貼文歸給
-   query（C2b 實測：查 ``Claude Sonnet 4`` 回大量 ``Sonnet 5.5`` 貼文），整筆丟棄
-   並計入 ``misattributed``；兩者皆未出現則保留，交由引擎 relevance 決定
-   （常見於留言上下文只寫「this model」的貼文）。
-3. **轉換**：``source``（hackernews→hn，x→x）、``url``、``postedAt``（ISO）、
+   等雜訊）；排除非英文貼文（評審 rubric 為英文，見 R1 筆記坑 7）；缺 url／缺時間
+   的丟棄。接著套用**歸屬判定**（實作裁定 14，取代 C6 的歸屬三態）：文字必須
+   以**精確版本**提及 query 模型才採計；只提品牌字無版本號 → 丟；提到「家族＋
+   版本」但該版本不在清單 → 丟（``misattributed``，最典型的症狀就是查
+   ``Claude Sonnet 4`` 卻回一堆 ``Sonnet 5.5`` 貼文）；完全沒提模型 → 丟。
+3. **粒度（C9／裁定 13）**：Reddit／HN **主貼不評分**，每個討論串改取熱門前
+   :data:`~arena.enrich.TOP_COMMENTS` 則**留言**，每則留言各自成一列
+   （``url``＝留言永久連結、``author``＝留言者、``postedAt``＝留言時間）；
+   X 維持每則推文一筆（X 池沒有留言結構）。留言不足照實取，0 則則該串不產生資料。
+4. **轉換**：``source``（hackernews→hn，x→x）、``url``、``postedAt``（ISO）、
    ``text``（title＋summary，截斷至 :data:`MAX_TEXT_CHARS` 字元，理由見證 R1 筆記
    坑 6 的 ~320 token state 預算）、``hash``（正規化文字的 sha256）、``modelId``、
-   ``author``（X 的作者帳號直接取自永久連結路徑，見 :func:`x_author_from_url`）；
-   ``votes``／``judge`` 一律 ``null``，交給 C3 回填。
-4. **補缺**：``author`` 與 HN 討論頁連結以公開 API 回填（見 :mod:`arena.enrich`）；
-   失敗留 ``null``，不阻擋。
+   ``author``（X 的作者帳號直接取自永久連結路徑，見 :func:`x_author_from_url`；
+   Reddit／HN 的 author 由留言 API 直接帶回）；``votes``／``judge`` 一律 ``null``，
+   交給 C3 回填。
 5. **去重**：與 ``data/evidence/*.jsonl`` 既有的 hash（跨檔）及同批內部都比對，
    重複只留一筆（跨來源轉貼亦然，例：Reddit 貼文與 X 轉推同文只留先到的一筆）。
 6. **落地**：``data/evidence/YYYY-MM-DD.jsonl``（UTC 日期）；同日重跑採
@@ -54,7 +55,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
-from arena.enrich import Enricher, HttpEnricher
+from arena.enrich import (
+    TOP_COMMENTS,
+    CommentFetcher,
+    Enricher,
+    HttpCommentFetcher,
+    HttpEnricher,
+)
 from arena.fetch_models import load_manual_models
 from arena.schema import EvidenceRecord
 
@@ -104,6 +111,10 @@ DEFAULT_SLEEP_BETWEEN_MODELS_SECONDS = 30.0
 # 只補缺「有機會補到」的來源。X 不需要補缺：作者直接由永久連結路徑取得
 # （見 x_author_from_url），url 本身已是永久連結。
 _ENRICHABLE_SOURCES = {"reddit", "hn"}
+
+# 走「留言逐則」的來源（裁定 13）：有留言結構、可取每串熱門前 N 則留言。
+# X 不在此列——X 池本就沒有留言結構，維持每則推文一筆。
+_COMMENT_SOURCES = {"reddit", "hn"}
 
 _DIGITS_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -304,53 +315,281 @@ def is_probably_english(text: str) -> bool:
     return latin_ratio(text) >= LATIN_RATIO_MIN
 
 
-def models_mentioned(text: str, model_names: Sequence[str]) -> set[str]:
-    """回傳 text 中出現的（設定清單裡的）模型名集合。
+# --- 版本精確比對（實作裁定 14）---------------------------------------------
 
-    以**詞邊界**比對（大小寫無關），避免「GPT-5」誤命中「GPT-5.6」或「GPT-5.5」
-    這類不同版本；模型名本身是整串（可含空白與連字號）。
+# 清單 id 的廠牌前綴 → 家族 key。家族是版本比對的單位：同一家族的不同版本
+# 互為「清單外／別席」，不可互相命中（研究報告 §6「世代綁定」）。
+FAMILY_BY_AUTHOR = {
+    "anthropic": "anthropic",
+    "openai": "openai",
+    "google": "google",
+    "deepseek": "deepseek",
+    "x-ai": "xai",
+    "z-ai": "zai",
+    "qwen": "qwen",
+    "moonshotai": "moonshot",
+    "moonshot": "moonshot",
+}
+
+# Anthropic 的等級詞：Sonnet/Opus/Haiku 是等級，須與版本號綁定（研究報告 §6）。
+CLASS_WORDS = ("sonnet", "opus", "haiku", "fable", "mythos")
+# 變體後綴：Prime／Flash／FlashX／Max／Pro／Astra／Sol／Luna／Terra 只能附掛在
+# 對應世代後，不能單獨當模型名（裁定 14 第 4 條）。
+VARIANT_WORDS = (
+    "astra",
+    "sol",
+    "luna",
+    "terra",
+    "prime",
+    "flashx",
+    "flash",
+    "max",
+    "pro",
+    "tts",
+)
+
+_CLASS_ALT = "|".join(CLASS_WORDS)
+_VARIANT_ALT = "|".join(VARIANT_WORDS)
+
+# 各家族的「家族＋版本（＋變體）」偵測式。版本號一律要求**精確**：版本後不得再接
+# 數字（也不得再接「.數字」），故「5.5」不會命中「5.55」、「6」不會命中「6.1」；
+# 句末的句點不算（`5.5.` 仍算 5.5）。變體後綴必須接在版本之後且是完整的詞，
+# 故「FlashX」不會被當成「Flash」。規格型變體（`27b`／`2.4t`）也算變體：
+# `Qwen3.8-27B` 不是 `Qwen3.8 Max`。
+# 每條 = (家族, pattern, 等級詞是否可省略)：Anthropic 可省略「Claude」前綴（社群常
+# 只寫「Sonnet 5.5」），但「Claude」與等級詞至少要出現一個，否則裸版本號會亂命中。
+_VERSION = r"(?P<version>\d+(?:\.\d+)?)(?!\.?\d)"
+_VARIANT = (
+    r"(?:[\s.\-]+(?P<variant>" + _VARIANT_ALT + r")(?!\w)"
+    r"|[\s.\-]+(?P<spec>\d+(?:\.\d+)?[bmt](?!\w)))?"
+)
+FAMILY_MENTION_PATTERNS: tuple[tuple[str, str, bool], ...] = (
+    (
+        "anthropic",
+        r"(?:claude[\s.\-]*)?(?:(?P<class>" + _CLASS_ALT + r")[\s.\-]+)?" + _VERSION,
+        True,
+    ),
+    (
+        "anthropic",
+        r"(?P<class>" + _CLASS_ALT + r")[\s.\-]+" + _VERSION,
+        False,
+    ),
+    ("openai", r"gpt[\s.\-]*" + _VERSION + _VARIANT, False),
+    ("google", r"gemini[\s.\-]*" + _VERSION + _VARIANT, False),
+    ("deepseek", r"deepseek[\s.\-]*v?" + _VERSION + _VARIANT, False),
+    ("xai", r"grok[\s.\-]*" + _VERSION, False),
+    ("zai", r"glm[\s.\-]*" + _VERSION + _VARIANT, False),
+    ("qwen", r"qwen[\s.\-]*" + _VERSION + _VARIANT, False),
+    ("moonshot", r"kimi[\s.\-]*k?" + _VERSION, False),
+)
+
+# 「只出現品牌字、無版本號」的偵測式（裁定 14 第 2 條：這類不採計）。
+BRAND_ONLY_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"claude",
+        r"anthropic",
+        r"\bgpt\b",
+        r"openai",
+        r"gemini",
+        r"deepseek",
+        r"\bgrok\b",
+        r"\bxai\b",
+        r"\bglm\b",
+        r"z\.?ai",
+        r"qwen",
+        r"kimi",
+        r"moonshot",
+        r"\b(?:sonnet|opus|haiku|fable|mythos)\b",
+    )
+)
+
+
+def _mention_key(family: str, version: str, variant: str, klass: str = "") -> str:
+    """模型的正規化比對鍵（``家族/等級/版本/變體``，空段以 ``-`` 表示）。"""
+    return "/".join(
+        (
+            family,
+            klass.lower() or "-",
+            version.lower() or "-",
+            (variant or "").lower() or "-",
+        )
+    )
+
+
+@lru_cache(maxsize=32)
+def _family_pattern(family: str, source: str, class_optional: bool) -> re.Pattern[str]:
+    del family, class_optional  # 只為讓不同條目各自快取
+    return re.compile(source, re.IGNORECASE)
+
+
+def _family_mentions(text: str) -> set[str]:
+    """找出 text 中所有「家族＋版本（＋變體）」的比對鍵（含清單外版本）。"""
+    keys: set[str] = set()
+    for family, source, class_optional in FAMILY_MENTION_PATTERNS:
+        for match in _family_pattern(family, source, class_optional).finditer(text):
+            groups = match.groupdict()
+            # Anthropic 第一條容許兩段都缺（純裸版本號），此時不算家族命中。
+            if (
+                class_optional
+                and not groups.get("class")
+                and "claude" not in match.group(0).lower()
+            ):
+                continue
+            keys.add(
+                _mention_key(
+                    family,
+                    groups.get("version") or "",
+                    groups.get("variant") or groups.get("spec") or "",
+                    groups.get("class") or "",
+                )
+            )
+    return keys
+
+
+def model_keys(model: Mapping[str, str]) -> set[str]:
+    """回傳某個清單模型的比對鍵（``家族/等級/版本/變體``）。
+
+    家族取自 id 的廠牌前綴，等級／變體詞取自顯示名，版本號取自顯示名中唯一含數字的
+    token（``V4.1 Flash`` → ``4.1``＋``flash``、``Kimi K3`` → ``3``、
+    ``Qwen3.8 Max`` → ``3.8``＋``max``）。沒有版本號的名稱不產生鍵（無法做版本
+    精確比對，寧可不算命中）。
     """
-    return {name for name in model_names if _mention_pattern(name).search(text)}
+    name = re.sub(r"\s+", " ", str(model.get("name") or "")).strip()
+    model_id = str(model.get("id") or "")
+    family = FAMILY_BY_AUTHOR.get(model_id.split("/")[0].lower(), "")
+    if not family:
+        return set()
+
+    version = ""
+    klass = ""
+    variant = ""
+    for token in name.split():
+        plain = token.strip(".,:;()[]")
+        if not plain:
+            continue
+        digits = re.search(r"\d+(?:\.\d+)?", plain)
+        if digits:
+            version = digits.group(0)
+            tail = plain[digits.end() :].lower()
+            head = plain[: digits.start()].lower()
+            if head in CLASS_WORDS:
+                klass = head
+            if tail in VARIANT_WORDS:
+                variant = tail
+            continue
+        lowered = plain.lower()
+        if lowered in CLASS_WORDS:
+            klass = lowered
+        elif lowered in VARIANT_WORDS:
+            variant = lowered
+    if not version:
+        return set()
+    return {_mention_key(family, version, variant, klass)}
 
 
-@lru_cache(maxsize=64)
-def _mention_pattern(name: str) -> re.Pattern[str]:
-    # 名稱前後不得緊鄰文字字元或小數點，否則視為不同版本。
-    return re.compile(r"(?<![\w.])" + re.escape(name) + r"(?![\w.])", re.IGNORECASE)
+def brand_only_family(text: str) -> str | None:
+    """text 只出現品牌字（無版本號）時回傳該品牌字；否則 ``None``。"""
+    if _family_mentions(text):
+        return None
+    for pattern in BRAND_ONLY_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return match.group(0)
+    return None
 
 
-def model_aliases(model: Mapping[str, str]) -> tuple[str, ...]:
-    """回傳在貼文文字中可用來辨識此模型的別名（供詞邊界比對）。
+def _core(key: str) -> str:
+    """去掉變體段的比對鍵（家族/等級/版本）。"""
+    return "/".join(key.split("/")[:3])
 
-    別名來源有三：
 
-    1. 顯示名本身（``Claude Sonnet 5.5``）。
-    2. id 的最後一段（``anthropic/claude-sonnet-5.5`` → ``claude-sonnet-5.5``）。
-    3. 顯示名**去掉首詞**的後綴（``Claude Sonnet 5.5`` → ``Sonnet 5.5``）——
-       社群貼文常省略廠牌前綴，只比對全名會漏掉跨版本誤歸（C2b 實測：查
-       ``Claude Sonnet 4`` 回傳的貼文多只寫 ``Sonnet 5.5``）。
+def _variant(key: str) -> str:
+    return key.split("/")[3]
 
-    後綴太短、不含任何字母，或（去首詞後綴）不含版本號數字者不採用
-    （例：``Grok 4.7`` 的 ``4.7`` 是純版本號、``GPT-6 Sol`` 的 ``Sol`` 太通用，
-    當成別名都會在無關文字裡誤命中）。回傳值去重且順序穩定。
+
+def _sibling_variants(catalogue: Sequence[Mapping[str, str]]) -> dict[str, set[str]]:
+    """同一「家族＋等級＋版本」底下的所有變體（用於判斷變體是否必須綁定）。
+
+    變體只在**同一世代在清單裡還有其他變體**時才需要精確比對：``zai/5.3`` 有 prime
+    與 flash 兩個席位，寫「GLM 5.3」無法定；但 ``google/2.5`` 只有 gemini-2.5-pro
+    一席，社群寫「Gemini 2.5」仍算命中。
     """
-    name = str(model.get("name") or "").strip()
-    slug = str(model.get("id") or "").split("/")[-1].strip()
-    # (候選字串, 是否要求含數字)：只有去首詞的後綴要求帶版本號。
-    candidates: list[tuple[str, bool]] = [(name, False), (slug, False)]
-    words = name.split()
-    if len(words) >= 2:
-        candidates.append((" ".join(words[1:]), True))
+    index: dict[str, set[str]] = {}
+    for entry in catalogue:
+        for key in model_keys(entry):
+            index.setdefault(_core(key), set()).add(_variant(key))
+    return index
 
-    aliases: list[str] = []
-    for candidate, require_digit in candidates:
-        if len(candidate) < 3 or not any(ch.isalpha() for ch in candidate):
+
+@dataclass(frozen=True)
+class Attribution:
+    """歸屬判定結果（裁定 14）：``keep`` 才會成為 evidence row。"""
+
+    keep: bool
+    reason: str
+    key: str | None = None
+
+
+def classify_attribution(
+    text: str, model: Mapping[str, str], catalogue: Sequence[Mapping[str, str]]
+) -> Attribution:
+    """判定一段文字是否真的在講 ``model``（實作裁定 14 的四條規則）。
+
+    1. **版本精確比對**：文字必須以精確版本提及 query 模型（含去廠牌前綴的寫法
+       ``Sonnet 5.5``、id 形 ``gpt-6-astra``）；版本後不得再接數字。
+    2. **只提品牌字、無版本號** → 丟（``dropped_brand_only``）。
+    3. **清單外「家族＋版本」**（如 ``Gemini 3.8``、``Sonnet 4.5``）→ 丟
+       （``misattributed``）；同一段文字同時提到別席模型也算歸屬不明。
+    4. 完全沒提任何模型 → 丟（``dropped_no_mention``）：裁定 14 第 1 條要求每筆
+       evidence 都精確提及該 row 的模型版本，交給引擎 relevance 猜的歸屬不算。
+
+    暱稱與變體後綴一律**綁定世代**（研究報告 §6）：``GPT-6 Sol`` ≠ ``GPT-5.6 Sol``、
+    ``GLM 5.3 Prime`` ≠ ``GLM 5.3 Flash``、``Qwen3.8-27B`` ≠ ``Qwen3.8 Max``。
+    """
+    mine = model_keys(model)
+    mentions = _family_mentions(text)
+    if not mentions:
+        brand = brand_only_family(text)
+        if brand:
+            return Attribution(False, "dropped_brand_only", brand)
+        return Attribution(False, "dropped_no_mention")
+
+    siblings = _sibling_variants(catalogue)
+
+    def _matches(mention_key: str) -> str | None:
+        """回傳與此 mention 對應的 query 比對鍵；不對應回 None。"""
+        if mention_key in mine:
+            return mention_key
+        if _variant(mention_key) != "-" or not mine:
+            return None
+        # 文字只寫到世代（例：只寫「Gemini 2.5」），且該世代在清單裡獨佔一席。
+        candidate = next((key for key in mine if _core(key) == _core(mention_key)), None)
+        if candidate is None:
+            return None
+        if len(siblings.get(_core(mention_key), set())) == 1:
+            return candidate
+        return None
+
+    matched = {key for key in mentions if (hit := _matches(key)) is not None}
+    if matched:
+        # 同一段文字還提到別的版本／別席模型 → 歸屬不明，整筆丟。
+        extra = mentions - set(matched)
+        if extra:
+            return Attribution(False, "misattributed", sorted(extra)[0])
+        return Attribution(True, "exact", sorted(matched)[0])
+
+    catalogue_keys: set[str] = set()
+    for entry in catalogue:
+        if entry.get("id") == model.get("id"):
             continue
-        if require_digit and not any(ch.isdigit() for ch in candidate):
-            continue
-        if candidate not in aliases:
-            aliases.append(candidate)
-    return tuple(aliases)
+        catalogue_keys |= model_keys(entry)
+
+    if mentions & catalogue_keys:
+        return Attribution(False, "misattributed", sorted(mentions)[0])
+    # 剩下的都是清單外的「家族＋版本」：最典型的症狀就是引擎模糊比對把新版貼文
+    # 歸給舊席（查 Sonnet 4 卻回 Sonnet 5.5）。
+    return Attribution(False, "misattributed", sorted(mentions)[0])
 
 
 def compose_text(title: str, summary: str) -> str:
@@ -422,13 +661,76 @@ class BuildStats:
     dropped_non_english: int = 0
     dropped_multi_model: int = 0
     misattributed: int = 0
+    dropped_brand_only: int = 0
+    dropped_no_mention: int = 0
     dropped_invalid: int = 0
     duplicates: int = 0
+    threads: int = 0
+    threads_without_comments: int = 0
+    comments_fetch_failed: int = 0
+    comments_non_english: int = 0
     by_source: dict[str, int] = field(default_factory=dict)
 
     def note_kept(self, source: str) -> None:
         self.kept += 1
         self.by_source[source] = self.by_source.get(source, 0) + 1
+
+    def note_drop(self, reason: str) -> None:
+        """把 :func:`classify_attribution` 的判定理由計入對應欄位。"""
+        if reason == "dropped_brand_only":
+            self.dropped_brand_only += 1
+        elif reason == "dropped_no_mention":
+            self.dropped_no_mention += 1
+        elif reason == "misattributed":
+            self.misattributed += 1
+        elif reason == "multi_model":
+            self.dropped_multi_model += 1
+
+
+def build_comment_records(
+    comments: Sequence[Any],
+    model: Mapping[str, str],
+    all_models: Sequence[Mapping[str, str]],
+    stats: BuildStats,
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
+    """把一個討論串的熱門留言轉成 evidence 列（裁定 13：每則留言各自成 row）。
+
+    每列的 ``url`` 是**留言**永久連結、``author`` 是留言者、``postedAt`` 是留言時間、
+    ``text`` 是留言原文（截斷沿用 :data:`MAX_TEXT_CHARS`）。歸屬與過濾規則與
+    :func:`build_records` 相同（版本精確比對＋品牌字丟＋清單外丟＋英文）。
+    """
+    records: list[dict[str, Any]] = []
+    for comment in comments:
+        text = str(getattr(comment, "text", "") or "").strip()
+        url = str(getattr(comment, "url", "") or "").strip()
+        posted_at = getattr(comment, "posted_at", None)
+        if not text or not url or not posted_at:
+            stats.dropped_no_date += 1
+            continue
+        if not is_probably_english(text):
+            stats.dropped_non_english += 1
+            continue
+        verdict = classify_attribution(text, model, all_models)
+        if not verdict.keep:
+            stats.note_drop(verdict.reason)
+            continue
+        author = getattr(comment, "author", None)
+        records.append(
+            {
+                "hash": content_hash(text[:MAX_TEXT_CHARS]),
+                "modelId": model["id"],
+                "source": source,
+                "url": url,
+                "author": author,
+                "postedAt": posted_at,
+                "text": text[:MAX_TEXT_CHARS],
+                "votes": None,
+                "judge": None,
+            }
+        )
+    return records
 
 
 def build_records(
@@ -436,29 +738,20 @@ def build_records(
     model: Mapping[str, str],
     all_models: Sequence[Mapping[str, str]],
     stats: BuildStats,
+    *,
+    comment_fetcher: CommentFetcher | None = None,
 ) -> list[dict[str, Any]]:
-    """把單一模型的引擎輸出轉成 evidence 列（尚未補缺、去重）。
+    """把單一模型的引擎輸出轉成 evidence 列（尚未去重）。
 
-    歸屬採**三態**判定（見模組 docstring）：先套既有「同時提及兩個以上清單模型名
-    → 丟」，再判斷 query 模型是否被提及；若 query 未出現、但出現**其他**清單模型
-    的別名，代表引擎的模糊比對把別人的貼文歸給 query（C2b 實測的 Sonnet 4／
-    Sonnet 5.5 情境），整筆丟棄並計入 :attr:`BuildStats.misattributed`。兩者皆
-    未出現時保留，交由引擎 relevance 決定（常見於留言上下文只寫「this model」）。
+    Reddit／HN 走**留言逐則**（實作裁定 13）：主貼本身不成 row，只取每個討論串
+    熱門前 :data:`~arena.enrich.TOP_COMMENTS` 則留言，每則留言各自成一列；X 維持
+    每則推文一列。歸屬判定改用 :func:`classify_attribution`（裁定 14：版本精確
+    比對、品牌字丟、清單外丟、暱稱綁定世代）。
     """
     records: list[dict[str, Any]] = []
     results = payload.get("results")
     if not isinstance(results, list):
         return records
-
-    # 多模型混雜判斷與「其他模型」偵測都用**完整清單**，即使 --models 只查一部分。
-    model_names = [str(entry.get("name") or "") for entry in all_models]
-    query_aliases = model_aliases(model)
-    other_aliases = [
-        alias
-        for entry in all_models
-        if entry.get("id") != model.get("id")
-        for alias in model_aliases(entry)
-    ]
 
     for result in results:
         if not isinstance(result, dict):
@@ -485,14 +778,38 @@ def build_records(
         if not is_probably_english(text):
             stats.dropped_non_english += 1
             continue
-        # 規則優先序：先既有 multi-model 丟除，再判 query 是否真的被提及。
-        if len(models_mentioned(text, model_names)) >= 2:
-            stats.dropped_multi_model += 1
+
+        source = SOURCE_MAP[raw_source]
+        if source in _COMMENT_SOURCES:
+            # 裁定 13：主貼不評分，改抓每串熱門留言，每則留言各自成 row。
+            stats.threads += 1
+            if comment_fetcher is None:
+                stats.comments_fetch_failed += 1
+                continue
+            try:
+                comments = comment_fetcher.thread_comments(
+                    source=source, url=url, title=text.splitlines()[0] if text else ""
+                )
+            except Exception as exc:  # 抓留言失敗不拖垮主流程
+                print(
+                    f"  [警告] 抓留言失敗（{url}）：{exc}", file=sys.stderr
+                )
+                stats.comments_fetch_failed += 1
+                continue
+            if not comments:
+                # 0 則留言（抓不到或真的沒留言）→ 該串不產生資料。
+                stats.threads_without_comments += 1
+                continue
+            rows = build_comment_records(comments, model, all_models, stats, source=source)
+            records.extend(rows)
+            for _ in rows:
+                stats.note_kept(source)
             continue
-        if not models_mentioned(text, query_aliases) and models_mentioned(
-            text, other_aliases
-        ):
-            stats.misattributed += 1
+
+        # X：維持每則推文一筆（X 池本就沒有留言結構）。
+        verdict = classify_attribution(text, model, all_models)
+        if not verdict.keep:
+            stats.note_drop(verdict.reason)
             continue
 
         # 截斷到 MAX_TEXT_CHARS（R1 筆記坑 6 的 ~320 token 預算）。
@@ -511,6 +828,7 @@ def build_records(
             "judge": None,
         }
         records.append(record)
+        stats.note_kept(source)
     return records
 
 
@@ -720,6 +1038,7 @@ def run(
     *,
     runner: Runner | None = None,
     enricher: Enricher | None = None,
+    comment_fetcher: CommentFetcher | None = None,
     sleep: Callable[[float], None] | None = None,
     now: Callable[[], datetime] | None = None,
 ) -> int:
@@ -754,8 +1073,8 @@ def run(
         return EXIT_ERROR
 
     enricher = enricher or HttpEnricher()
-    # 歸屬／多模型判斷用「完整清單」（含別名），即使 --models 只查一部分也一樣。
-    # （完整清單在 :func:`build_records` 內展開成 name／id 末段／去首詞後綴。）
+    comment_fetcher = comment_fetcher or HttpCommentFetcher()
+    # 歸屬判定用「完整清單」（即使 --models 只查一部分，清單外版本的偵測也要完整）。
 
     existing_hashes = load_existing_hashes(output_dir)
     seen_hashes = set(existing_hashes)
@@ -798,19 +1117,27 @@ def run(
             else:
                 print(f"  [警告] 來源狀態 {note}", file=sys.stderr)
 
-        for record in build_records(outcome.payload, model, all_models, stats):
+        for record in build_records(
+            outcome.payload,
+            model,
+            all_models,
+            stats,
+            comment_fetcher=comment_fetcher,
+        ):
             if record["hash"] in seen_hashes:
                 stats.duplicates += 1
                 continue
             seen_hashes.add(record["hash"])
             collected.append(record)
 
-    # 補缺（author／HN 討論頁連結）。
+    # 補缺：C9 起 reddit／hn 的 row 是留言，author 與留言永久連結都由留言 API
+    # 帶回來了，故這裡只補**仍缺 author** 的留言（刪除／機器人留言會是 null），
+    # 且**不再換 url**——留言的永久連結必須指向留言本身（裁定 13）。
     for record in collected:
-        if record["source"] not in _ENRICHABLE_SOURCES:
+        if record["source"] not in _ENRICHABLE_SOURCES or record["author"]:
             continue
         try:
-            author, new_url = enricher.enrich(
+            author, _new_url = enricher.enrich(
                 source=record["source"],
                 url=record["url"],
                 title=record["text"].splitlines()[0] if record["text"] else "",
@@ -821,8 +1148,6 @@ def run(
             continue
         if author:
             record["author"] = author
-        if new_url:
-            record["url"] = new_url
 
     # schema 驗證後才落地；不合法者丟棄（理論上 build_records 已擋掉多半情況）。
     valid: list[dict[str, Any]] = []
@@ -872,10 +1197,15 @@ def _print_summary(
     print(
         "  過濾：來源不符 {dropped_source}、缺 url {dropped_no_url}、"
         "缺時間/空文 {dropped_no_date}、非英文 {dropped_non_english}、"
-        "多模型 {dropped_multi_model}、誤歸屬 {misattributed}、"
-        "schema 不合法 {dropped_invalid}；"
+        "只提品牌字 {dropped_brand_only}、沒提任何模型 {dropped_no_mention}、"
+        "誤歸屬 {misattributed}、schema 不合法 {dropped_invalid}；"
         "重複（含跨檔／同批）{duplicates}。".format(**stats.__dict__)
     )
+    if stats.threads:
+        print(
+            f"  留言逐則：討論串 {stats.threads}，無留言 {stats.threads_without_comments}，"
+            f"抓留言失敗 {stats.comments_fetch_failed}（每串取熱門前 {TOP_COMMENTS} 則）。"
+        )
     if stats.kept:
         print(f"  本輪保留 {stats.kept} 筆（{sources}），實際新增 {added} 筆。")
     if rate_limit_events:
@@ -935,6 +1265,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 __all__ = [
+    "Attribution",
+    "BRAND_ONLY_PATTERNS",
     "BuildStats",
     "CollectError",
     "DEFAULT_DAYS",
@@ -952,15 +1284,17 @@ __all__ = [
     "SOURCE_MAP",
     "SubprocessRunner",
     "add_arguments",
+    "brand_only_family",
+    "build_comment_records",
     "build_records",
+    "classify_attribution",
     "compose_text",
     "content_hash",
     "is_probably_english",
     "latin_ratio",
     "load_existing_hashes",
     "merge_and_write",
-    "model_aliases",
-    "models_mentioned",
+    "model_keys",
     "normalize_text",
     "query_model",
     "resolve_engine_python",

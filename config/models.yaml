@@ -7,31 +7,61 @@
 #   provider 廠牌顯示名（必填，供網站篩選）
 #   alias    選用；OpenRouter 查不到 id 時的備援匹配鍵（例如舊 id／canonical slug）
 #
-# 初始名單＝data/scores.json 種子的 4 個模型，加上 2026-09 近期熱門模型。
+# 清單 v2（2026-10-01，實作裁定 14）。入選依據一律以 X 池實掃證據為準，見
+# `docs/research/model-roster-survey.md`（§2 名稱統計、§5 A/B 檔建議）：
+#   - 移除 anthropic/claude-sonnet-4（X 0/2 命中，名下貼文都在聊 Sonnet 5.5）
+#   - 移除 openai/gpt-5（X 1/7 命中，其餘在聊 GPT-5.6／6 系列）
+#   - 移除 deepseek/deepseek-v3.1（過時世代，且 OpenRouter 已下架）
+#   - 保留 google/gemini-2.5-pro（X 6/7 真討論——社群緬懷文，非誤歸）
+#   - 新增 A 檔 5 個＋B 檔 5 個（下方註解標明檔位與 X 池筆數）
 models:
-  - id: anthropic/claude-sonnet-4
-    name: Claude Sonnet 4
-    provider: Anthropic
+  # --- 現行模型（保留）-------------------------------------------------------
   - id: anthropic/claude-sonnet-5.5
     name: Claude Sonnet 5.5
     provider: Anthropic
-  - id: openai/gpt-5
-    name: GPT-5
-    provider: OpenAI
   - id: openai/gpt-6-sol
     name: GPT-6 Sol
     provider: OpenAI
   - id: google/gemini-2.5-pro
     name: Gemini 2.5 Pro
     provider: Google
-  # deepseek/deepseek-v3.1 已從 OpenRouter 現行清單下架（2026-09 實查），
-  # 保留在人工名單中示範「API 沒有、仍要輸出並標記缺欄」的情境。
-  - id: deepseek/deepseek-v3.1
-    name: DeepSeek V3.1
-    provider: DeepSeek
   - id: x-ai/grok-4.7
     name: Grok 4.7
     provider: xAI
   - id: z-ai/glm-5.3-prime
     name: GLM 5.3 Prime
     provider: Z.AI
+  # --- 新增 A 檔（X 池 ≥3 筆精確提及，證據較強）------------------------------
+  - id: anthropic/claude-opus-5.5
+    name: Claude Opus 5.5
+    provider: Anthropic
+  - id: anthropic/claude-sonnet-5
+    name: Claude Sonnet 5
+    provider: Anthropic
+  - id: openai/gpt-6-astra
+    name: GPT-6 Astra
+    provider: OpenAI
+  - id: z-ai/glm-5.3-flash
+    name: GLM 5.3 Flash
+    provider: Z.AI
+  - id: deepseek/deepseek-v4.1-flash
+    name: DeepSeek V4.1 Flash
+    provider: DeepSeek
+  # --- 新增 B 檔（邊緣／觀察，X 池 3~4 筆且多集中於單一清單文）--------------
+  # qwen3.8-max 在 OpenRouter 的實際 id 是 -0902 版（研究報告原記的
+  # `qwen/qwen3.8-max` 於 2026-10-01 實查不存在，故直接用實際 id）。
+  - id: qwen/qwen3.8-max-0902
+    name: Qwen3.8 Max
+    provider: Alibaba
+  - id: anthropic/claude-opus-5
+    name: Claude Opus 5
+    provider: Anthropic
+  - id: moonshotai/kimi-k3
+    name: Kimi K3
+    provider: Moonshot
+  - id: anthropic/claude-fable-5.1
+    name: Claude Fable 5.1
+    provider: Anthropic
+  - id: openai/gpt-5.6-luna
+    name: GPT-5.6 Luna
+    provider: OpenAI
