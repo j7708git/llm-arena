@@ -67,10 +67,75 @@ BATCH_NOT_FOUND_GRACE_SECONDS = 600.0
 
 # API key 環境變數（缺 key 明確報錯，不靜默降級）。
 API_KEY_ENV = "OPENROUTER_API_KEY"
-# 金鑰檔路徑覆寫（環境變數）：非預設環境與測試用。
-API_KEY_FILE_ENV = "OPENROUTER_API_KEY_FILE"
-# 預設金鑰檔：放在 repo 之外，避免誤入版控（owner 裁定 2026-10-02）。
-DEFAULT_API_KEY_FILE = Path.home() / ".config" / "llm-arena" / "openrouter.key"
+# 相容的別名：中央金鑰檔（如 ``~/.keys/.env``）常用 ``OPENROUTER_KEY``。
+API_KEY_ENV_ALIASES = ("OPENROUTER_API_KEY", "OPENROUTER_KEY")
+# 專案自己的 dotenv（預設 <repo>/.env，已 gitignore）；可用 ``ARENA_DOTENV`` 覆寫。
+DOTENV_ENV = "ARENA_DOTENV"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DOTENV = PROJECT_ROOT / ".env"
+# 中央金鑰檔（owner 的統一金鑰存放處，dotenv 風格）：
+# 由環境變數 ``ARENA_ENV_FILE`` 或專案 .env 內的 ``ARENA_ENV_FILE`` 指定，
+# 未指定時回退到 :data:`DEFAULT_ENV_FILE`。
+ENV_FILE_ENV = "ARENA_ENV_FILE"
+DEFAULT_ENV_FILE = Path.home() / ".keys" / ".env"
+
+
+def parse_env_file(text: str) -> dict[str, str]:
+    """解析 dotenv 風格的環境檔（``KEY=VALUE`` 一行一筆）。
+
+    規則：忽略空行、``#`` 註解、**不含 ``=`` 的行**（例如分組標題
+    ``(AERO15_Tools)``）；可選 ``export `` 前綴；值的前後引號（單／雙）會被去除；
+    同一鍵重複出現時以最後一筆為準。
+    """
+    values: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        name, _, value = line.partition("=")
+        name = name.strip()
+        if not name:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[name] = value
+    return values
+
+
+def dotenv_path() -> Path:
+    """回傳專案自己的 dotenv 路徑：``ARENA_DOTENV`` 可覆寫，預設 :data:`DEFAULT_DOTENV`。"""
+    override = os.environ.get(DOTENV_ENV, "").strip()
+    return Path(override).expanduser() if override else DEFAULT_DOTENV
+
+
+def load_env_file(path: Path | None = None) -> dict[str, str]:
+    """讀取 dotenv 檔；不存在或不可讀時回空 dict（不報錯）。"""
+    target = path if path is not None else dotenv_path()
+    try:
+        return parse_env_file(target.read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+
+
+def env_file_path(dotenv: Mapping[str, str] | None = None) -> Path:
+    """回傳中央金鑰檔路徑：環境變數 ``ARENA_ENV_FILE`` → 專案 .env 內的同名鍵 → 預設。"""
+    override = os.environ.get(ENV_FILE_ENV, "").strip()
+    if not override and dotenv:
+        override = str(dotenv.get(ENV_FILE_ENV, "")).strip()
+    return Path(override).expanduser() if override else DEFAULT_ENV_FILE
+
+
+def _key_from(values: Mapping[str, str], source: str) -> tuple[str, str]:
+    """從解析後的值取 API key，回 ``(key, 來源說明)``；找不到回 ``("", "")``。"""
+    for name in API_KEY_ENV_ALIASES:
+        key = str(values.get(name, "")).strip()
+        if key:
+            return key, f"{source} 的 {name}"
+    return "", ""
+
 
 SYSTEM_PROMPT = (
     "You are a strict, impartial annotation judge for a dataset that measures "
@@ -577,31 +642,39 @@ class JuryPredictor:
                 per_state[index][member] = labels
 
 
-def api_key_file_path() -> Path:
-    """回傳金鑰檔路徑：``OPENROUTER_API_KEY_FILE`` 可覆寫，預設 :data:`DEFAULT_API_KEY_FILE`。"""
-    override = os.environ.get(API_KEY_FILE_ENV, "").strip()
-    return Path(override).expanduser() if override else DEFAULT_API_KEY_FILE
-
-
 def resolve_api_key() -> str:
-    """解析 OpenRouter API key：環境變數優先，其次金鑰檔；都沒有則明確報錯。
+    """解析 OpenRouter API key，來源依序：
 
-    金鑰檔只是一行 key（前後空白會被 strip），放在 repo 之外避免誤入版控。
+    1. 行程環境變數 ``OPENROUTER_API_KEY``／``OPENROUTER_KEY``
+    2. **專案自己的 dotenv**（``<repo>/.env``，``ARENA_DOTENV`` 可覆寫；gitignore 已涵蓋）
+    3. **中央金鑰檔**（預設 ``~/.keys/.env``；由 ``ARENA_ENV_FILE`` 指定，可寫在
+       環境變數或專案 .env 裡）——一份 key 給多個程式共用時用這層
+
+    三者皆無時明確報錯（不靜默降級），錯誤訊息列出全部來源。
     """
-    api_key = os.environ.get(API_KEY_ENV, "").strip()
+    for name in API_KEY_ENV_ALIASES:
+        api_key = os.environ.get(name, "").strip()
+        if api_key:
+            return api_key
+
+    project_dotenv = dotenv_path()
+    dotenv_values = load_env_file(project_dotenv)
+    api_key, _ = _key_from(dotenv_values, f"{project_dotenv}")
     if api_key:
         return api_key
-    path = api_key_file_path()
-    try:
-        api_key = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        api_key = ""
+
+    central = env_file_path(dotenv_values)
+    api_key, _ = _key_from(load_env_file(central), f"{central}")
     if api_key:
         return api_key
+
     raise ScoreError(
-        f"缺少 {API_KEY_ENV} 環境變數、且金鑰檔 {path} 不存在或為空；arena score "
-        "需要 OpenRouter API key 才能呼叫評審團（不靜默降級）。請擇一設定："
-        f"`export {API_KEY_ENV}=sk-or-...`，或把 key 寫入 {path}（chmod 600）。"
+        "缺少 OpenRouter API key；arena score 需要它才能呼叫評審團（不靜默降級）。"
+        "請擇一設定："
+        f"(1) `export {API_KEY_ENV}=sk-or-...`；"
+        f"(2) 在 {project_dotenv} 寫入 {API_KEY_ENV}=sk-or-...（或 OPENROUTER_KEY=...）；"
+        f"(3) 用 {ENV_FILE_ENV} 指向中央金鑰檔（目前解析為 {central}），"
+        f"並在該檔寫入 {API_KEY_ENV}=sk-or-...（或 OPENROUTER_KEY=...）。"
     )
 
 
@@ -612,30 +685,37 @@ def build_jury_predictor(*, use_batch: bool) -> JuryPredictor:
 
 __all__ = [
     "API_KEY_ENV",
-    "API_KEY_FILE_ENV",
+    "API_KEY_ENV_ALIASES",
     "BATCH_SUFFIX",
-    "DEFAULT_API_KEY_FILE",
     "DEFAULT_BACKOFF_SECONDS",
     "DEFAULT_BASE_URL",
     "DEFAULT_BATCH_TIMEOUT_SECONDS",
+    "DEFAULT_DOTENV",
+    "DEFAULT_ENV_FILE",
     "DEFAULT_MAX_RETRIES",
     "DEFAULT_POLL_INTERVAL_SECONDS",
     "DEFAULT_TIMEOUT",
+    "DOTENV_ENV",
+    "ENV_FILE_ENV",
     "JURY_MEMBERS",
     "JuryCallError",
     "JuryOutcome",
     "JuryPredictor",
     "NON_BATCH_MEMBERS",
     "OpenRouterChatClient",
+    "PROJECT_ROOT",
     "SYSTEM_PROMPT",
     "aggregate_member_labels",
-    "api_key_file_path",
     "api_model_id",
     "build_jury_predictor",
     "build_messages",
+    "dotenv_path",
+    "env_file_path",
     "jury_judge",
+    "load_env_file",
     "member_short_name",
     "members_hash",
+    "parse_env_file",
     "parse_member_labels",
     "resolve_api_key",
 ]

@@ -21,6 +21,7 @@ import pytest
 from arena import build as build_mod
 from arena import collect as collect_mod
 from arena import fetch_models as fm
+from arena import jury
 from arena import score as score_mod
 from arena.openrouter import OpenRouterUnavailable
 
@@ -54,3 +55,10 @@ def _no_network_no_repo_writes(
         collect_mod, "DEFAULT_OUTPUT_DIR", tmp_path / "evidence-offline"
     )
     monkeypatch.setenv("ARENA_OFFLINE", "1")
+
+    # 金鑰來源（2026-10-02）：測試不得讀到開發者機器上的真實金鑰
+    # （行程環境變數、專案 .env 與中央金鑰檔都指向不存在的位置）。
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_KEY", raising=False)
+    monkeypatch.setenv(jury.DOTENV_ENV, str(tmp_path / "no-such-dotenv"))
+    monkeypatch.setenv(jury.ENV_FILE_ENV, str(tmp_path / "no-such-env-file"))

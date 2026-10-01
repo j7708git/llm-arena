@@ -691,64 +691,115 @@ def test_build_jury_predictor_reads_env(monkeypatch: pytest.MonkeyPatch) -> None
     assert predictor.judge == jury_judge()
 
 
-# --- 金鑰來源（環境變數優先、其次金鑰檔）--------------------------------------
+# --- 金鑰來源（環境變數 → 專案 .env → 中央金鑰檔）------------------------------
 
 
-def test_resolve_api_key_env_wins_over_file(
+def _isolate_keys(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """把兩個 dotenv 來源都指到不存在的路徑（conftest 已做，這裡供個別測試覆寫）。"""
+    monkeypatch.setenv(jury.DOTENV_ENV, str(tmp_path / "nonexistent-dotenv"))
+    monkeypatch.setenv(jury.ENV_FILE_ENV, str(tmp_path / "nonexistent-central"))
+
+
+def test_parse_env_file_handles_owner_format() -> None:
+    text = "\n".join(
+        [
+            "# 註解",
+            "(AERO15_Tools)",  # 分組標題：不含 = 應忽略
+            "",
+            "export OPENROUTER_API_KEY='sk-or-quoted'",
+            'OPENROUTER_KEY="sk-or-double"',
+            "OPENROUTER_KEY=sk-or-last-wins",
+            "EMPTY_VALUE=",
+        ]
+    )
+    values = jury.parse_env_file(text)
+    assert values["OPENROUTER_API_KEY"] == "sk-or-quoted"
+    assert values["OPENROUTER_KEY"] == "sk-or-last-wins"  # 後者覆蓋前者
+    assert values["EMPTY_VALUE"] == ""
+    assert "(AERO15_Tools)" not in values
+
+
+def test_resolve_api_key_env_wins_over_all_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    key_file = tmp_path / "openrouter.key"
-    key_file.write_text("sk-or-from-file\n", encoding="utf-8")
-    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(key_file))
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("OPENROUTER_KEY=sk-or-from-dotenv\n", encoding="utf-8")
+    central = tmp_path / "central.env"
+    central.write_text("OPENROUTER_KEY=sk-or-from-central\n", encoding="utf-8")
+    monkeypatch.setenv(jury.DOTENV_ENV, str(dotenv))
+    monkeypatch.setenv(jury.ENV_FILE_ENV, str(central))
     monkeypatch.setenv(jury.API_KEY_ENV, "sk-or-from-env")
     assert jury.resolve_api_key() == "sk-or-from-env"
 
 
-def test_resolve_api_key_reads_file_when_env_missing(
+def test_resolve_api_key_project_dotenv_wins_over_central(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    key_file = tmp_path / "openrouter.key"
-    key_file.write_text("  sk-or-from-file\n\n", encoding="utf-8")
-    monkeypatch.delenv(jury.API_KEY_ENV, raising=False)
-    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(key_file))
-    assert jury.resolve_api_key() == "sk-or-from-file"
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("OPENROUTER_KEY=sk-or-from-dotenv\n", encoding="utf-8")
+    central = tmp_path / "central.env"
+    central.write_text("OPENROUTER_KEY=sk-or-from-central\n", encoding="utf-8")
+    monkeypatch.setenv(jury.DOTENV_ENV, str(dotenv))
+    monkeypatch.setenv(jury.ENV_FILE_ENV, str(central))
+    assert jury.resolve_api_key() == "sk-or-from-dotenv"
 
 
-def test_resolve_api_key_reports_both_sources(
+def test_resolve_api_key_dotenv_points_to_central_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """專案 .env 內以 ARENA_ENV_FILE 指向中央金鑰檔（owner 的用法）。"""
+    central = tmp_path / ".keys.env"
+    central.write_text("(AERO15_Tools)\nOPENROUTER_KEY=sk-or-central\n", encoding="utf-8")
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(f"{jury.ENV_FILE_ENV}={central}\n", encoding="utf-8")
+    monkeypatch.delenv(jury.ENV_FILE_ENV, raising=False)
+    monkeypatch.setenv(jury.DOTENV_ENV, str(dotenv))
+    assert jury.resolve_api_key() == "sk-or-central"
+
+
+def test_resolve_api_key_reports_all_sources(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from arena.score import ScoreError
 
-    missing = tmp_path / "nope" / "openrouter.key"
-    monkeypatch.delenv(jury.API_KEY_ENV, raising=False)
-    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(missing))
+    dotenv = tmp_path / "no-dotenv"
+    central = tmp_path / "no-central"
+    monkeypatch.setenv(jury.DOTENV_ENV, str(dotenv))
+    monkeypatch.setenv(jury.ENV_FILE_ENV, str(central))
     with pytest.raises(ScoreError) as excinfo:
         jury.resolve_api_key()
     message = str(excinfo.value)
-    assert "OPENROUTER_API_KEY" in message
-    assert str(missing) in message
+    assert jury.API_KEY_ENV in message
+    assert str(dotenv) in message
+    assert str(central) in message
 
 
-def test_resolve_api_key_rejects_blank_file(
+def test_resolve_api_key_rejects_blank_value(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from arena.score import ScoreError
 
-    key_file = tmp_path / "openrouter.key"
-    key_file.write_text("   \n", encoding="utf-8")
-    monkeypatch.delenv(jury.API_KEY_ENV, raising=False)
-    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(key_file))
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("OPENROUTER_KEY=   \n", encoding="utf-8")
+    monkeypatch.setenv(jury.DOTENV_ENV, str(dotenv))
+    monkeypatch.setenv(jury.ENV_FILE_ENV, str(tmp_path / "no-central"))
     with pytest.raises(ScoreError):
         jury.resolve_api_key()
 
 
-def test_api_key_file_path_default_and_override(
+def test_dotenv_and_env_file_defaults(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.delenv(jury.API_KEY_FILE_ENV, raising=False)
-    assert jury.api_key_file_path() == jury.DEFAULT_API_KEY_FILE
-    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(tmp_path / "k"))
-    assert jury.api_key_file_path() == tmp_path / "k"
+    monkeypatch.delenv(jury.DOTENV_ENV, raising=False)
+    monkeypatch.delenv(jury.ENV_FILE_ENV, raising=False)
+    assert jury.dotenv_path() == jury.DEFAULT_DOTENV == jury.PROJECT_ROOT / ".env"
+    assert jury.env_file_path() == jury.DEFAULT_ENV_FILE
+    monkeypatch.setenv(jury.DOTENV_ENV, str(tmp_path / "custom.env"))
+    assert jury.dotenv_path() == tmp_path / "custom.env"
+    # 專案 .env 內的 ARENA_ENV_FILE 會覆蓋預設中央檔路徑。
+    assert jury.env_file_path({jury.ENV_FILE_ENV: str(tmp_path / "central.env")}) == (
+        tmp_path / "central.env"
+    )
 
 
 def test_client_rejects_empty_key() -> None:
