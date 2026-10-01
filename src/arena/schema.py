@@ -1,4 +1,4 @@
-"""schema v1.1／v1.2 的 pydantic 定義（`arena validate` 的唯一依據）。
+"""schema v1.1／v1.2／evidence v1.3 的 pydantic 定義（`arena validate` 的唯一依據）。
 
 此檔是 `docs/plan.md`「資料契約」與「Schema 實作裁定」的可執行版本：欄位一律以計畫為準，
 不自行增減。若計畫的 schema 有歧義或需要變更，先改 `docs/plan.md` 再改這裡，
@@ -38,10 +38,17 @@ v1.2（2026-09-30）相對 v1.1 的變化（C8，契約見實作裁定第 12 條
 - ``scores.json`` 的 ``meta.schemaVersion`` 升 1.2，``meta.judge`` 改為
   ``{kind: "llm-jury", members: [...], calibrated: false}``。
 
+v1.3（2026-10-02）相對 v1.2 的變化（C10，實作裁定 15）：
+
+- evidence 新增**可選** ``thread`` 欄位（:class:`ThreadRef`）：``{url, title, modelId}``，
+  記錄留言所屬主貼與該串的歸屬依據（歸屬證據在主貼、情緒證據在留言）。
+  欄位可為 null → 同一個 :class:`EvidenceRecordV12` 即同時接受 v1.2（無 ``thread``）
+  與 v1.3（有 ``thread``）兩種列。``scores.json`` 契約不變（仍 v1.2）。
+
 兩種檔案：
 
 - ``data/scores.json``       → :class:`ScoresDocument`
-- ``data/evidence/*.jsonl``  → 每行一筆 :class:`EvidenceRecord`
+- ``data/evidence/*.jsonl``  → 每行一筆 :class:`EvidenceRecord`／:class:`EvidenceRecordV12`
 """
 
 from __future__ import annotations
@@ -338,6 +345,19 @@ class MemberVotes(_ContractModel):
         return self
 
 
+class ThreadRef(_ContractModel):
+    """evidence v1.3 的 ``thread``：留言所屬主貼的歸屬依據（實作裁定 15）。
+
+    歸屬證據在主貼標題、情緒證據在留言（裁定 13 留言逐則化後兩者被拆開），
+    所以留言 row 記下「我繼承（或改判自）哪個主貼」。X 推文沒有留言結構，
+    整個欄位省略（``None``）。
+    """
+
+    url: str = Field(min_length=1, description="主貼永久連結")
+    title: str = Field(min_length=1, description="主貼標題（歸屬比對的依據文字）")
+    modelId: str = Field(min_length=1, description="該串歸屬的模型 id")
+
+
 class EvidenceRecord(_ContractModel):
     """``data/evidence/YYYY-MM-DD.jsonl`` 的每一行（v1.1，laya 版）。"""
 
@@ -352,6 +372,10 @@ class EvidenceRecord(_ContractModel):
     )
     postedAt: datetime = Field(description="張貼時間（ISO 8601）")
     text: str = Field(min_length=1, description="貼文內容")
+    # v1.3（可選）：留言所屬主貼；v1.1／v1.2 的列沒有此欄，故可為 null。
+    thread: ThreadRef | None = Field(
+        default=None, description="留言所屬主貼（url／title／modelId）；X 推文無此欄"
+    )
     # 以下兩欄由 C2 落地時先寫 null，交由 `arena score` 回填；
     # 因此「結構合法但尚未評分」是合法的 evidence（plan.md 實作裁定第 7 條）。
     votes: Votes | None = Field(
@@ -369,6 +393,9 @@ class EvidenceRecordV12(_ContractModel):
     ``judge`` 格式為 ``llm-jury@<8 碼 hex>``。``votes`` 非 null 時
     ``juryVotes``／``judge`` 必填；``votes`` 為 null（例如某位評審呼叫失敗）
     時仍可保留部分 ``juryVotes`` 供稽核。
+
+    v1.3（實作裁定 15）只多一個**可選**的 ``thread`` 欄位，故同一個模型即同時
+    接受 v1.2（無 ``thread``）與 v1.3（有 ``thread``）兩種列。
     """
 
     hash: str = Field(min_length=1, description="去重鍵（正規化內容的 hash）")
@@ -380,6 +407,10 @@ class EvidenceRecordV12(_ContractModel):
     )
     postedAt: datetime = Field(description="張貼時間（ISO 8601）")
     text: str = Field(min_length=1, description="貼文內容")
+    # v1.3（可選）：留言所屬主貼；X 推文與 v1.2 的列都沒有此欄。
+    thread: ThreadRef | None = Field(
+        default=None, description="留言所屬主貼（url／title／modelId）；X 推文無此欄"
+    )
     votes: AggregatedVotes | None = Field(
         default=None, description="多數決聚合票；未評分或評審失敗為 null"
     )
@@ -442,6 +473,7 @@ __all__ = [
     "DEFAULT_WEIGHTS",
     "EvidenceRecord",
     "EvidenceRecordV12",
+    "ThreadRef",
     "ScoresDocument",
     "ModelEntry",
     "Meta",

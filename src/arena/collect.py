@@ -13,10 +13,15 @@
    以**精確版本**提及 query 模型才採計；只提品牌字無版本號 → 丟；提到「家族＋
    版本」但該版本不在清單 → 丟（``misattributed``，最典型的症狀就是查
    ``Claude Sonnet 4`` 卻回一堆 ``Sonnet 5.5`` 貼文）；完全沒提模型 → 丟。
-3. **粒度（C9／裁定 13）**：Reddit／HN **主貼不評分**，每個討論串改取熱門前
-   :data:`~arena.enrich.TOP_COMMENTS` 則**留言**，每則留言各自成一列
-   （``url``＝留言永久連結、``author``＝留言者、``postedAt``＝留言時間）；
-   X 維持每則推文一筆（X 池沒有留言結構）。留言不足照實取，0 則則該串不產生資料。
+3. **粒度與歸屬（C9／裁定 13、C10／裁定 15）**：Reddit／HN **主貼不評分**，每個
+   討論串取熱門前 :data:`~arena.enrich.TOP_COMMENTS`（C10 由 10 提到 20）則**留言**，
+   每則留言各自成一列（``url``＝留言永久連結、``author``＝留言者、``postedAt``＝留言時間）。
+   **歸屬與情緒分離**：主貼（title＋body）以 :func:`classify_attribution` 決定**整串**
+   的模型，未通過歸屬的串其留言全丟；通過的串再逐則走
+   :func:`classify_comment_attribution`（五條優先序：自身精確提及 → 歸它；
+   清單外版本 → 丟；只提同家族品牌字 → 繼承；只提他家族品牌字 → 丟；完全不提模型 →
+   繼承）。每列另帶可選的 ``thread`` 欄位（schema v1.3）記錄主貼 url／title／modelId。
+   X 維持每則推文一筆（X 池沒有留言結構），歸屬用主貼層級規則、不帶 ``thread``。
 4. **轉換**：``source``（hackernews→hn，x→x）、``url``、``postedAt``（ISO）、
    ``text``（title＋summary，截斷至 :data:`MAX_TEXT_CHARS` 字元，理由見證 R1 筆記
    坑 6 的 ~320 token state 預算）、``hash``（正規化文字的 sha256）、``modelId``、
@@ -384,24 +389,28 @@ FAMILY_MENTION_PATTERNS: tuple[tuple[str, str, bool], ...] = (
 )
 
 # 「只出現品牌字、無版本號」的偵測式（裁定 14 第 2 條：這類不採計）。
+# 每條同時記錄所屬家族 key——裁定 15 第 3、4 條要靠它分辨「品牌字屬串本身家族」
+# （繼承）還是「屬其他家族」（丟棄），故 pattern 與家族綁在一起。
+BRAND_FAMILY_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("anthropic", r"claude"),
+    ("anthropic", r"anthropic"),
+    ("anthropic", r"\b(?:sonnet|opus|haiku|fable|mythos)\b"),
+    ("openai", r"\bgpt\b"),
+    ("openai", r"openai"),
+    ("google", r"gemini"),
+    ("deepseek", r"deepseek"),
+    ("xai", r"\bgrok\b"),
+    ("xai", r"\bxai\b"),
+    ("zai", r"\bglm\b"),
+    ("zai", r"z\.?ai"),
+    ("qwen", r"qwen"),
+    ("moonshot", r"kimi"),
+    ("moonshot", r"moonshot"),
+)
+
 BRAND_ONLY_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(pattern, re.IGNORECASE)
-    for pattern in (
-        r"claude",
-        r"anthropic",
-        r"\bgpt\b",
-        r"openai",
-        r"gemini",
-        r"deepseek",
-        r"\bgrok\b",
-        r"\bxai\b",
-        r"\bglm\b",
-        r"z\.?ai",
-        r"qwen",
-        r"kimi",
-        r"moonshot",
-        r"\b(?:sonnet|opus|haiku|fable|mythos)\b",
-    )
+    for _family, pattern in BRAND_FAMILY_PATTERNS
 )
 
 
@@ -499,6 +508,25 @@ def brand_only_family(text: str) -> str | None:
     return None
 
 
+@lru_cache(maxsize=32)
+def _brand_pattern(source: str) -> re.Pattern[str]:
+    return re.compile(source, re.IGNORECASE)
+
+
+def brand_families(text: str) -> set[str]:
+    """text 中出現品牌字（無版本號）的**所有**家族 key 集合（裁定 15 第 3、4 條）。
+
+    只提品牌字時無法判定版本，但可以判定「是哪個家族在講」：屬串本身家族就繼承串
+    （例：Opus 5.5 串裡說「Claude 就是讚」），屬其他家族就丟（例：同串說「Gemini
+    比較好」——那是另一個家族，無法判定是哪一版）。
+    """
+    families: set[str] = set()
+    for family, pattern in BRAND_FAMILY_PATTERNS:
+        if _brand_pattern(pattern).search(text):
+            families.add(family)
+    return families
+
+
 def _core(key: str) -> str:
     """去掉變體段的比對鍵（家族/等級/版本）。"""
     return "/".join(key.split("/")[:3])
@@ -531,6 +559,40 @@ class Attribution:
     key: str | None = None
 
 
+def _catalogue_hits(
+    mentions: set[str], catalogue: Sequence[Mapping[str, str]]
+) -> dict[str, str]:
+    """回傳「清單模型 id → 命中它的那個 mention 鍵」。
+
+    比對規則與 :func:`classify_attribution` 相同：精確命中模型鍵；或該世代在清單裡
+    獨佔一席時接受裸世代寫法（``Gemini 2.5`` → ``gemini-2.5-pro``）。清單外的版本
+    不會出現在結果裡。**一個 mention 鍵最多對應一席**，因為同席的雙變體
+    （``GLM 5.3 Prime``／``GLM 5.3 Flash``）不會被裸世代命中。
+    """
+    if not mentions:
+        return {}
+    siblings = _sibling_variants(catalogue)
+    hits: dict[str, str] = {}
+    for entry in catalogue:
+        model_id = str(entry.get("id") or "")
+        mine = model_keys(entry)
+        if not model_id or not mine:
+            continue
+        for mention_key in sorted(mentions):
+            if mention_key in mine:
+                hits[model_id] = mention_key
+                break
+            if _variant(mention_key) != "-" or not mine:
+                continue
+            # 文字只寫到世代（例：只寫「Gemini 2.5」），且該世代在清單裡獨佔一席。
+            if not any(_core(key) == _core(mention_key) for key in mine):
+                continue
+            if len(siblings.get(_core(mention_key), set())) == 1:
+                hits[model_id] = mention_key
+                break
+    return hits
+
+
 def classify_attribution(
     text: str, model: Mapping[str, str], catalogue: Sequence[Mapping[str, str]]
 ) -> Attribution:
@@ -546,6 +608,9 @@ def classify_attribution(
 
     暱稱與變體後綴一律**綁定世代**（研究報告 §6）：``GPT-6 Sol`` ≠ ``GPT-5.6 Sol``、
     ``GLM 5.3 Prime`` ≠ ``GLM 5.3 Flash``、``Qwen3.8-27B`` ≠ ``Qwen3.8 Max``。
+
+    這是**主貼層級**的判定（裁定 15：主貼決定該串歸屬）；留言層級見
+    :func:`classify_comment_attribution`。
     """
     mine = model_keys(model)
     mentions = _family_mentions(text)
@@ -555,29 +620,15 @@ def classify_attribution(
             return Attribution(False, "dropped_brand_only", brand)
         return Attribution(False, "dropped_no_mention")
 
-    siblings = _sibling_variants(catalogue)
-
-    def _matches(mention_key: str) -> str | None:
-        """回傳與此 mention 對應的 query 比對鍵；不對應回 None。"""
-        if mention_key in mine:
-            return mention_key
-        if _variant(mention_key) != "-" or not mine:
-            return None
-        # 文字只寫到世代（例：只寫「Gemini 2.5」），且該世代在清單裡獨佔一席。
-        candidate = next((key for key in mine if _core(key) == _core(mention_key)), None)
-        if candidate is None:
-            return None
-        if len(siblings.get(_core(mention_key), set())) == 1:
-            return candidate
-        return None
-
-    matched = {key for key in mentions if (hit := _matches(key)) is not None}
-    if matched:
+    hits = _catalogue_hits(mentions, catalogue)
+    mine_id = str(model.get("id") or "")
+    if mine_id in hits:
+        matched = hits[mine_id]
         # 同一段文字還提到別的版本／別席模型 → 歸屬不明，整筆丟。
-        extra = mentions - set(matched)
+        extra = mentions - {matched}
         if extra:
             return Attribution(False, "misattributed", sorted(extra)[0])
-        return Attribution(True, "exact", sorted(matched)[0])
+        return Attribution(True, "exact", matched)
 
     catalogue_keys: set[str] = set()
     for entry in catalogue:
@@ -590,6 +641,78 @@ def classify_attribution(
     # 剩下的都是清單外的「家族＋版本」：最典型的症狀就是引擎模糊比對把新版貼文
     # 歸給舊席（查 Sonnet 4 卻回 Sonnet 5.5）。
     return Attribution(False, "misattributed", sorted(mentions)[0])
+
+
+@dataclass(frozen=True)
+class CommentAttribution:
+    """留言層級的歸屬判定結果（實作裁定 15）。
+
+    ``keep`` 為真才會成為 evidence row。``model_id`` 是這一則留言最終歸屬的模型
+    （繼承時等於串的模型；自身精確提及另一清單模型時則是**那個**模型）。
+    ``inherited`` 標記歸屬是否來自主貼繼承——驗收要分別統計這兩種來源。
+    """
+
+    keep: bool
+    reason: str
+    model_id: str | None = None
+    inherited: bool = False
+    key: str | None = None
+
+
+def classify_comment_attribution(
+    text: str,
+    thread_model: Mapping[str, str],
+    catalogue: Sequence[Mapping[str, str]],
+) -> CommentAttribution:
+    """判定一則留言歸屬哪個模型（實作裁定 15 的五條優先序，依序套用）。
+
+    1. **留言自己精確提到清單內某版本** → 歸給它（即使該模型與串本身不同：串屬
+       Opus 5.5、留言講「GPT-6 Sol 比較強」就歸 GPT-6 Sol）。同時精確提到兩個以上
+       清單模型 → 丟（``dropped_multi_model``，歸屬不明）；提到清單內某版本**又**
+       提到清單外版本 → 丟（``misattributed``，沿用裁定 14 第 3 條的嚴格度）。
+    2. **只提「家族＋版本」但版本不在清單**（串屬 Opus 5.5、留言講「Gemini 3.8」）
+       → 丟（``dropped_off_catalogue``），無法對到任何清單席。
+    3. **只提品牌字且屬串本身家族**（Opus 5.5 串裡說「Claude 就是讚」）→ 繼承該串
+       （``inherited_brand_only``）。
+    4. **只提品牌字但屬其他家族**（同串說「Gemini 比較好」）→ 丟
+       （``dropped_other_family``），無法判定是哪一版。
+    5. **完全不提任何模型** → 繼承該串（``inherited_no_mention``）。這是留言逐則化
+       之後樣本暴增的主因：留言本來就不會重複寫模型版本。
+
+    串本身未通過歸屬時，該串所有留言皆丟——由 :func:`build_records` 在抓留言前就先
+    擋掉整串，這裡只處理已通過歸屬的串。
+    """
+    thread_id = str(thread_model.get("id") or "")
+    mentions = _family_mentions(text)
+
+    if mentions:
+        hits = _catalogue_hits(mentions, catalogue)
+        if not hits:
+            return CommentAttribution(False, "dropped_off_catalogue", key=sorted(mentions)[0])
+        if len(hits) > 1:
+            return CommentAttribution(
+                False, "dropped_multi_model", key=",".join(sorted(hits))
+            )
+        hit_id, hit_key = next(iter(hits.items()))
+        extra = mentions - {hit_key}
+        if extra:
+            return CommentAttribution(False, "misattributed", key=sorted(extra)[0])
+        reason = "exact" if hit_id == thread_id else "exact_other_model"
+        return CommentAttribution(True, reason, model_id=hit_id, key=hit_key)
+
+    families = brand_families(text)
+    if not families:
+        return CommentAttribution(
+            True, "inherited_no_mention", model_id=thread_id, inherited=True
+        )
+    thread_family = FAMILY_BY_AUTHOR.get(thread_id.split("/")[0].lower(), "")
+    if thread_family and families == {thread_family}:
+        return CommentAttribution(
+            True, "inherited_brand_only", model_id=thread_id, inherited=True
+        )
+    return CommentAttribution(
+        False, "dropped_other_family", key=",".join(sorted(families))
+    )
 
 
 def compose_text(title: str, summary: str) -> str:
@@ -667,8 +790,18 @@ class BuildStats:
     duplicates: int = 0
     threads: int = 0
     threads_without_comments: int = 0
+    threads_unattributed: int = 0
+    threads_brand_only: int = 0
+    threads_no_mention: int = 0
+    threads_misattributed: int = 0
     comments_fetch_failed: int = 0
     comments_non_english: int = 0
+    # 裁定 15：留言歸屬來源（驗收要分別統計「自身精確提及」與「繼承主貼」）。
+    comments_self_attributed: int = 0
+    comments_inherited: int = 0
+    comments_inherited_brand_only: int = 0
+    comments_dropped_other_family: int = 0
+    comments_dropped_off_catalogue: int = 0
     by_source: dict[str, int] = field(default_factory=dict)
 
     def note_kept(self, source: str) -> None:
@@ -676,15 +809,47 @@ class BuildStats:
         self.by_source[source] = self.by_source.get(source, 0) + 1
 
     def note_drop(self, reason: str) -> None:
-        """把 :func:`classify_attribution` 的判定理由計入對應欄位。"""
+        """把 :func:`classify_attribution`（主貼／X 層級）的判定理由計入對應欄位。
+
+        留言層級的判定走 :meth:`note_comment_verdict`（歸屬來源要另外分流統計）。
+        """
         if reason == "dropped_brand_only":
             self.dropped_brand_only += 1
         elif reason == "dropped_no_mention":
             self.dropped_no_mention += 1
         elif reason == "misattributed":
             self.misattributed += 1
-        elif reason == "multi_model":
+        elif reason in {"multi_model", "dropped_multi_model"}:
             self.dropped_multi_model += 1
+
+    def note_comment_verdict(self, verdict: CommentAttribution) -> None:
+        """留言層級判定（裁定 15）的計數：保留者分流到自身／繼承兩欄。"""
+        if not verdict.keep:
+            if verdict.reason == "dropped_off_catalogue":
+                self.comments_dropped_off_catalogue += 1
+            elif verdict.reason == "dropped_other_family":
+                self.comments_dropped_other_family += 1
+            elif verdict.reason == "dropped_multi_model":
+                self.dropped_multi_model += 1
+            else:
+                self.misattributed += 1
+            return
+        if verdict.inherited:
+            self.comments_inherited += 1
+            if verdict.reason == "inherited_brand_only":
+                self.comments_inherited_brand_only += 1
+        else:
+            self.comments_self_attributed += 1
+
+    def note_thread_drop(self, reason: str) -> None:
+        """串層級歸屬未通過的計數（裁定 15：整串留言皆丟）。"""
+        self.threads_unattributed += 1
+        if reason == "dropped_brand_only":
+            self.threads_brand_only += 1
+        elif reason == "dropped_no_mention":
+            self.threads_no_mention += 1
+        else:
+            self.threads_misattributed += 1
 
 
 def build_comment_records(
@@ -694,13 +859,25 @@ def build_comment_records(
     stats: BuildStats,
     *,
     source: str,
+    thread_url: str,
+    thread_title: str,
 ) -> list[dict[str, Any]]:
     """把一個討論串的熱門留言轉成 evidence 列（裁定 13：每則留言各自成 row）。
 
     每列的 ``url`` 是**留言**永久連結、``author`` 是留言者、``postedAt`` 是留言時間、
-    ``text`` 是留言原文（截斷沿用 :data:`MAX_TEXT_CHARS`）。歸屬與過濾規則與
-    :func:`build_records` 相同（版本精確比對＋品牌字丟＋清單外丟＋英文）。
+    ``text`` 是留言原文（截斷沿用 :data:`MAX_TEXT_CHARS`）。歸屬走**留言層級**規則
+    （裁定 15，:func:`classify_comment_attribution`）：留言自己精確提到清單模型就歸它，
+    否則按五條優先序決定繼承該串或丟棄。
+
+    每列另帶**可選**的 ``thread`` 欄位（evidence schema v1.3）
+    ``{url, title, modelId}``：主貼永久連結、主貼標題、**該串**歸屬的模型。歸屬依據
+    靠它回溯，X 推文（無留言結構）不帶此欄。
     """
+    thread_ref = {
+        "url": thread_url,
+        "title": thread_title[:MAX_TEXT_CHARS],
+        "modelId": model["id"],
+    }
     records: list[dict[str, Any]] = []
     for comment in comments:
         text = str(getattr(comment, "text", "") or "").strip()
@@ -712,25 +889,43 @@ def build_comment_records(
         if not is_probably_english(text):
             stats.dropped_non_english += 1
             continue
-        verdict = classify_attribution(text, model, all_models)
+        verdict = classify_comment_attribution(text, model, all_models)
+        stats.note_comment_verdict(verdict)
         if not verdict.keep:
-            stats.note_drop(verdict.reason)
             continue
         author = getattr(comment, "author", None)
         records.append(
             {
                 "hash": content_hash(text[:MAX_TEXT_CHARS]),
-                "modelId": model["id"],
+                "modelId": verdict.model_id or model["id"],
                 "source": source,
                 "url": url,
                 "author": author,
                 "postedAt": posted_at,
                 "text": text[:MAX_TEXT_CHARS],
+                # v1.3：記錄歸屬依據（主貼）。繼承者與 self 歸屬都帶，方便站方與稽核
+                # 分辨「這則自己提到模型」或「繼承主貼」。
+                "thread": dict(thread_ref),
                 "votes": None,
                 "judge": None,
             }
         )
     return records
+
+
+def _thread_permalink(
+    fetcher: CommentFetcher | None, source: str, url: str, title: str
+) -> str:
+    """主貼永久連結：優先問抓取器（HN 的 url 常指向外部原文），沒有就沿用原 url。"""
+    resolver = getattr(fetcher, "thread_url", None)
+    if not callable(resolver):
+        return url
+    try:
+        resolved = resolver(source=source, url=url, title=title)
+    except Exception as exc:  # 補主貼連結失敗不該拖垮整串
+        print(f"  [警告] 取主貼永久連結失敗（{url}）：{exc}", file=sys.stderr)
+        return url
+    return str(resolved or url)
 
 
 def build_records(
@@ -743,10 +938,12 @@ def build_records(
 ) -> list[dict[str, Any]]:
     """把單一模型的引擎輸出轉成 evidence 列（尚未去重）。
 
-    Reddit／HN 走**留言逐則**（實作裁定 13）：主貼本身不成 row，只取每個討論串
-    熱門前 :data:`~arena.enrich.TOP_COMMENTS` 則留言，每則留言各自成一列；X 維持
-    每則推文一列。歸屬判定改用 :func:`classify_attribution`（裁定 14：版本精確
-    比對、品牌字丟、清單外丟、暱稱綁定世代）。
+    Reddit／HN 走**留言逐則＋主貼定歸屬**（裁定 13＋15）：主貼（title＋body）以
+    :func:`classify_attribution` 決定**整串**的模型（裁定 14：版本精確比對、品牌字
+    丟、清單外丟、暱稱綁世代）；未通過歸屬的串，該串所有留言皆丟。通過的串取熱門前
+    :data:`~arena.enrich.TOP_COMMENTS` 則留言，每則留言各自成一列，歸屬再走
+    :func:`classify_comment_attribution`（五條優先序，留言可繼承串或改判另一清單
+    模型）。X 維持每則推文一列，歸屬用主貼層級的 :func:`classify_attribution`。
     """
     records: list[dict[str, Any]] = []
     results = payload.get("results")
@@ -783,12 +980,23 @@ def build_records(
         if source in _COMMENT_SOURCES:
             # 裁定 13：主貼不評分，改抓每串熱門留言，每則留言各自成 row。
             stats.threads += 1
+            # 裁定 15：主貼（title＋body）決定**整串**的歸屬；串未通過歸屬則
+            # 該串所有留言皆丟——在抓留言之前就先擋掉，省下兩次留言 API 呼叫。
+            thread_verdict = classify_attribution(text, model, all_models)
+            if not thread_verdict.keep:
+                stats.note_thread_drop(thread_verdict.reason)
+                continue
             if comment_fetcher is None:
                 stats.comments_fetch_failed += 1
                 continue
+            # 主貼標題單獨存（thread.title 的歸屬依據）：compose_text 在 summary
+            # 已含 title 時只留 summary，所以不能從 text 反推標題。
+            thread_title = str(result.get("title") or "").strip()
+            if not thread_title:
+                thread_title = text.splitlines()[0].strip()
             try:
                 comments = comment_fetcher.thread_comments(
-                    source=source, url=url, title=text.splitlines()[0] if text else ""
+                    source=source, url=url, title=thread_title
                 )
             except Exception as exc:  # 抓留言失敗不拖垮主流程
                 print(
@@ -800,7 +1008,15 @@ def build_records(
                 # 0 則留言（抓不到或真的沒留言）→ 該串不產生資料。
                 stats.threads_without_comments += 1
                 continue
-            rows = build_comment_records(comments, model, all_models, stats, source=source)
+            rows = build_comment_records(
+                comments,
+                model,
+                all_models,
+                stats,
+                source=source,
+                thread_url=_thread_permalink(comment_fetcher, source, url, thread_title),
+                thread_title=thread_title,
+            )
             records.extend(rows)
             for _ in rows:
                 stats.note_kept(source)
@@ -833,12 +1049,19 @@ def build_records(
 
 
 def _validated(record: dict[str, Any]) -> dict[str, Any] | None:
-    """以 schema 驗證一筆記錄；不合法回 ``None``（呼叫端累計後丟棄）。"""
+    """以 schema 驗證一筆記錄；不合法回 ``None``（呼叫端累計後丟棄）。
+
+    ``thread`` 為 null 時**整欄省略**（X 推文沒有主貼；v1.2 的留言 row 也可能沒有），
+    不落地成 ``"thread": null``——欄位語意是「有主貼才有 thread」。
+    """
     try:
         parsed = EvidenceRecord.model_validate(record)
     except Exception:  # pydantic.ValidationError
         return None
-    return parsed.model_dump(mode="json")
+    dumped = parsed.model_dump(mode="json")
+    if dumped.get("thread") is None:
+        dumped.pop("thread", None)
+    return dumped
 
 
 # --- 去重與落地 -------------------------------------------------------------
@@ -1203,8 +1426,25 @@ def _print_summary(
     )
     if stats.threads:
         print(
-            f"  留言逐則：討論串 {stats.threads}，無留言 {stats.threads_without_comments}，"
+            f"  留言逐則：討論串 {stats.threads}，串未通過歸屬 {stats.threads_unattributed}"
+            f"（只提品牌字 {stats.threads_brand_only}、沒提模型 {stats.threads_no_mention}、"
+            f"誤歸屬 {stats.threads_misattributed}），無留言 {stats.threads_without_comments}，"
             f"抓留言失敗 {stats.comments_fetch_failed}（每串取熱門前 {TOP_COMMENTS} 則）。"
+        )
+        kept_comments = stats.comments_self_attributed + stats.comments_inherited
+        print(
+            "  留言歸屬（裁定 15）：繼承主貼 {inh}（其中只提同家族品牌字 {brand}）、"
+            "自身精確提及 {self}；丟棄：清單外版本 {off}、他家族品牌字 {other}、"
+            "多模型 {multi}、誤歸屬 {mis}。".format(
+                inh=stats.comments_inherited,
+                brand=stats.comments_inherited_brand_only,
+                self=stats.comments_self_attributed,
+                off=stats.comments_dropped_off_catalogue,
+                other=stats.comments_dropped_other_family,
+                multi=stats.dropped_multi_model,
+                mis=stats.misattributed,
+            )
+            + f" 合計保留 {kept_comments} 則。"
         )
     if stats.kept:
         print(f"  本輪保留 {stats.kept} 筆（{sources}），實際新增 {added} 筆。")
@@ -1266,9 +1506,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 __all__ = [
     "Attribution",
+    "BRAND_FAMILY_PATTERNS",
     "BRAND_ONLY_PATTERNS",
     "BuildStats",
     "CollectError",
+    "CommentAttribution",
     "DEFAULT_DAYS",
     "DEFAULT_ENGINE_SCRIPT",
     "DEFAULT_MODELS_CONFIG",
@@ -1284,10 +1526,12 @@ __all__ = [
     "SOURCE_MAP",
     "SubprocessRunner",
     "add_arguments",
+    "brand_families",
     "brand_only_family",
     "build_comment_records",
     "build_records",
     "classify_attribution",
+    "classify_comment_attribution",
     "compose_text",
     "content_hash",
     "is_probably_english",

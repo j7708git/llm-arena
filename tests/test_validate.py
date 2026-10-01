@@ -21,7 +21,7 @@ from arena.schema import (
     EvidenceRecordV12,
     ScoresDocument,
 )
-from arena.validate import _evidence_model_for, validate_path
+from arena.validate import _evidence_model_for, validate_evidence_lines, validate_path
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED_SCORES = ROOT / "data" / "scores.json"
@@ -216,6 +216,76 @@ def test_v11_scores_with_jury_judge_is_rejected(tmp_path: Path) -> None:
     data["meta"]["judge"] = {"kind": "llm-jury", "members": ["a/b"], "calibrated": False}
     errors = validate_path(write_json(tmp_path / "scores.json", data))
     assert any("judge" in message for message in errors)
+
+
+# --- evidence v1.3：可選 thread 欄位（實作裁定 15）--------------------------
+
+
+def _v13_record(**thread: object) -> dict:
+    """v1.3 的留言 row：v1.2 形狀＋``thread``＝{url, title, modelId}。"""
+    record = _v12_record()
+    record["thread"] = {
+        "url": "https://www.reddit.com/r/LocalLLaMA/comments/abc123/thread/",
+        "title": "Claude Opus 5.5 impressions",
+        "modelId": "anthropic/claude-opus-5.5",
+        **thread,
+    }
+    return record
+
+
+def test_v13_evidence_with_thread_passes(tmp_path: Path) -> None:
+    """驗收：validate 同時接受 v1.2（無 thread）與 v1.3（有 thread）。"""
+    v12_path = _write_record(tmp_path, _v12_record(), name="v12.jsonl")
+    v13_path = _write_record(tmp_path, _v13_record(), name="v13.jsonl")
+
+    assert validate_path(v12_path) == []
+    assert validate_path(v13_path) == []
+    assert main(["validate", str(v12_path), str(v13_path)]) == 0
+
+
+def test_v13_record_is_validated_as_v12_model() -> None:
+    """``thread`` 不影響版本分流：v1.3 列仍走 EvidenceRecordV12。"""
+    assert _evidence_model_for(_v13_record()) is EvidenceRecordV12
+
+
+def test_v13_thread_requires_all_three_fields(tmp_path: Path) -> None:
+    for missing in ("url", "title", "modelId"):
+        record = _v13_record()
+        del record["thread"][missing]
+        errors = validate_path(_write_record(tmp_path, record))
+        assert any(missing in message for message in errors), missing
+
+
+def test_v13_thread_rejects_unknown_field(tmp_path: Path) -> None:
+    record = _v13_record()
+    record["thread"]["oops"] = True
+    errors = validate_path(_write_record(tmp_path, record))
+    assert any("oops" in message for message in errors)
+
+
+def test_v13_thread_rejects_empty_title(tmp_path: Path) -> None:
+    record = _v13_record(title="")
+    errors = validate_path(_write_record(tmp_path, record))
+    assert any("title" in message for message in errors)
+
+
+def test_v11_evidence_also_accepts_thread() -> None:
+    """v1.1（laya）列同樣可帶 thread（欄位與 judge 版本無關）。"""
+    record = _scored_evidence_record()
+    record["thread"] = {
+        "url": "https://news.ycombinator.com/item?id=42",
+        "title": "Sonnet 5.5 review",
+        "modelId": "anthropic/claude-sonnet-5.5",
+    }
+    assert EvidenceRecord.model_validate(record).thread is not None
+
+
+def test_x_tweet_row_without_thread_is_valid() -> None:
+    """X 推文不帶 thread（可選欄位），仍要通過。"""
+    record = _v13_record()
+    record["source"] = "x"
+    del record["thread"]
+    assert validate_evidence_lines(json.dumps(record, ensure_ascii=False) + "\n") == []
 
 
 # --- 合法 -------------------------------------------------------------------

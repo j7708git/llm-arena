@@ -148,6 +148,24 @@ def test_backfills_six_votes(tmp_path: Path) -> None:
     assert validate_path(path) == []
 
 
+def test_v13_thread_field_survives_scoring(tmp_path: Path) -> None:
+    """evidence v1.3 的 thread 欄位在評分回填後必須原樣保留（歸屬依據不能被評分吃掉）。"""
+    record = _record("h1", text="no model name here")
+    record["thread"] = {
+        "url": "https://www.reddit.com/r/x/comments/abc/thread/",
+        "title": "Sonnet 5.5 review",
+        "modelId": "anthropic/claude-sonnet-4",
+    }
+    path = _write(tmp_path / "e.jsonl", [record])
+    fake = FakePredictor({"no model name here": Prediction(make_votes())})
+
+    assert _run(path, fake) == EXIT_OK
+
+    scored = _read(path)[0]
+    assert scored["thread"] == record["thread"]
+    assert validate_path(path) == []
+
+
 def test_legacy_label_prob_fields_are_removed(tmp_path: Path) -> None:
     """v1 舊檔（label/prob）重評後要清掉舊欄位，否則新 schema 會擋。"""
     record = _record("h1", text="old format")

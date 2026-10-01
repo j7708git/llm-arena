@@ -411,9 +411,9 @@ def test_comment_fetcher_failure_does_not_abort(tmp_path: Path) -> None:
     assert read_today(tmp_path) == []
 
 
-def test_comment_limit_is_ten_per_thread() -> None:
-    """每串最多取 10 則留言（enrich.TOP_COMMENTS）。"""
-    assert collect.TOP_COMMENTS == 10
+def test_comment_limit_is_twenty_per_thread() -> None:
+    """每串最多取 20 則留言（enrich.TOP_COMMENTS，裁定 15）。"""
+    assert collect.TOP_COMMENTS == 20
 
     comments = [
         comment(
@@ -421,25 +421,32 @@ def test_comment_limit_is_ten_per_thread() -> None:
             source="reddit",
             url=f"{REDDIT_FIRST}comment/c{index}/",
         )
-        for index in range(15)
+        for index in range(25)
     ]
     stats = collect.BuildStats()
     model = {"id": "anthropic/claude-sonnet-5.5", "name": SONNET55}
     rows = collect.build_comment_records(
-        comments[: collect.TOP_COMMENTS], model, [model], stats, source="reddit"
+        comments[: collect.TOP_COMMENTS],
+        model,
+        [model],
+        stats,
+        source="reddit",
+        thread_url=REDDIT_FIRST,
+        thread_title=SONNET55,
     )
 
-    assert len(rows) == 10
+    assert len(rows) == 20
 
 
-def test_comment_text_must_mention_model_exactly(tmp_path: Path) -> None:
-    """只提品牌字或沒提模型的留言不入池（裁定 14 第 1、2 條）。"""
+# --- C10：留言歸屬繼承主貼（實作裁定 15）------------------------------------
+
+
+def test_comment_without_mention_inherits_thread(tmp_path: Path) -> None:
+    """完全不提模型的留言繼承該串（第 5 條）——這是樣本數暴增的主因。"""
     comments = {
         ("reddit", REDDIT_FIRST): [
-            comment("Claude is great", source="reddit", url="a"),
-            comment("This model is great", source="reddit", url="b"),
-            comment("Sonnet 4.5 was better", source="reddit", url="c"),
-            comment("Sonnet 5.5 is great", source="reddit", url="d"),
+            comment("This is a generational leap", source="reddit", url="a"),
+            comment("It costs way too much", source="reddit", url="b"),
         ]
     }
     run_collect(
@@ -449,7 +456,210 @@ def test_comment_text_must_mention_model_exactly(tmp_path: Path) -> None:
     )
 
     records = read_today(tmp_path)
-    assert [record["url"] for record in records] == ["d"]
+    assert [record["url"] for record in records] == ["a", "b"]
+    assert all(record["modelId"] == "anthropic/claude-sonnet-5.5" for record in records)
+
+
+def test_comment_brand_only_of_thread_family_inherits(tmp_path: Path) -> None:
+    """只提品牌字但屬串本身家族 → 繼承該串（第 3 條）。"""
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("Claude is great", source="reddit", url="a"),
+            comment("Anthropic really cooks", source="reddit", url="b"),
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    records = read_today(tmp_path)
+    assert [record["url"] for record in records] == ["a", "b"]
+
+
+def test_comment_brand_only_of_other_family_is_dropped(tmp_path: Path) -> None:
+    """只提品牌字但屬其他家族 → 丟（第 4 條，無法判定是哪一版）。
+
+    註：「GPT-6 Sol」帶了版本號，走第 1 條（自身精確提及 → 歸它），故留在池中且
+    歸屬改判為 gpt-6-sol；這裡只驗證純品牌字的「Qwen is the best」被丟。
+    """
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("Qwen is the real deal", source="reddit", url="a"),
+            comment("Anthropic is eating our lunch", source="reddit", url="b"),
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    records = read_today(tmp_path)
+    assert [record["url"] for record in records] == ["b"]
+    assert records[0]["modelId"] == "anthropic/claude-sonnet-5.5"
+
+
+def test_comment_off_catalogue_version_is_dropped(tmp_path: Path) -> None:
+    """留言講「家族＋版本」但版本不在清單 → 丟（第 2 條）。"""
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("Gemini 3.8 beats Sonnet 5.5 easily", source="reddit", url="a"),
+            comment("Sonnet 4.5 was better", source="reddit", url="b"),
+            comment("Sonnet 5.5 is great", source="reddit", url="c"),
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    records = read_today(tmp_path)
+    assert [record["url"] for record in records] == ["c"]
+
+
+def test_comment_mentioning_two_catalogue_models_is_dropped(tmp_path: Path) -> None:
+    """留言同時精確提到兩個清單模型 → 丟（第 1 條，歸屬不明）。"""
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("Sonnet 5.5 vs GPT-6 Sol, which wins?", source="reddit", url="a"),
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    assert read_today(tmp_path) == []
+
+
+def test_comment_own_mention_overrides_thread_model(tmp_path: Path) -> None:
+    """留言自己精確提到另一清單模型 → 歸給那個模型（第 1 條，可改判）。"""
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("GPT-6 Sol is honestly better", source="reddit", url="a"),
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    record = read_today(tmp_path)[0]
+    # row 歸 GPT-6 Sol，但 thread.modelId 仍記錄「該串」歸屬＝Sonnet 5.5。
+    assert record["modelId"] == "openai/gpt-6-sol"
+    assert record["thread"]["modelId"] == "anthropic/claude-sonnet-5.5"
+
+
+def test_unattributed_thread_drops_all_its_comments(tmp_path: Path) -> None:
+    """串本身未通過歸屬 → 該串所有留言皆丟，且不該為此串呼叫留言 API。"""
+    payload = make_payload(
+        [
+            {
+                "source": "reddit",
+                "url": REDDIT_FIRST,
+                "published_at": "2026-09-22",
+                "title": "What do you think about the latest release?",
+                "summary": "No model name here at all.",
+            }
+        ]
+    )
+    fetcher = FakeCommentFetcher(
+        {
+            ("reddit", REDDIT_FIRST): [
+                comment("Sonnet 5.5 is great", source="reddit", url="a")
+            ]
+        }
+    )
+    assert (
+        run_collect(
+            tmp_path, FakeRunner({SONNET55: payload}), comment_fetcher=fetcher
+        )
+        == 0
+    )
+
+    assert read_today(tmp_path) == []
+    assert fetcher.calls == []  # 歸屬未過就不抓留言，省下兩次 API 呼叫
+
+
+def test_comment_rows_carry_thread_ref(tmp_path: Path) -> None:
+    """留言 row 帶 thread＝{url, title, modelId}（schema v1.3 的可稽核性）。"""
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("No model name in this comment", source="reddit", url="a")
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    record = read_today(tmp_path)[0]
+    assert record["thread"] == {
+        "url": REDDIT_FIRST,
+        "title": "Sonnet 5.5 is a joy to use",
+        "modelId": "anthropic/claude-sonnet-5.5",
+    }
+
+
+def test_x_row_never_carries_thread(tmp_path: Path) -> None:
+    """X 推文沒有留言結構，不帶 thread 欄位。"""
+    payload = make_payload(
+        [
+            {
+                "source": "x",
+                "url": "https://x.com/alice/status/123",
+                "published_at": "2026-09-22T00:00:00Z",
+                "title": "Sonnet 5.5 thoughts",
+                "summary": "Sonnet 5.5 is a joy to use.",
+            }
+        ]
+    )
+    run_collect(tmp_path, FakeRunner({SONNET55: payload}))
+
+    record = read_today(tmp_path)[0]
+    assert "thread" not in record
+    assert validate_path(tmp_path / "evidence" / f"{TODAY}.jsonl") == []
+
+
+def test_thread_title_comes_from_result_not_composed_text(tmp_path: Path) -> None:
+    """thread.title 是主貼標題本身（compose_text 在 summary 含標題時只留 summary）。"""
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("no model here", source="reddit", url="a")
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    record = read_today(tmp_path)[0]
+    assert record["thread"]["title"] == "Sonnet 5.5 is a joy to use"
+
+
+def test_comment_attribution_stats_split_self_and_inherited(tmp_path: Path) -> None:
+    """摘要要分開報「自身精確提及」與「繼承主貼」兩種歸屬來源（裁定 15）。"""
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("Sonnet 5.5 is great", source="reddit", url="a"),
+            comment("Claude is great", source="reddit", url="b"),
+            comment("no model at all", source="reddit", url="c"),
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+
+    assert len(read_today(tmp_path)) == 3
 
 
 # --- author 補缺 ------------------------------------------------------------
@@ -833,7 +1043,10 @@ def test_comment_fetcher_hn_uses_algolia_items() -> None:
     assert fetcher.stats["hn_ok"] == 1
 
 
-def test_comment_fetcher_caps_at_ten() -> None:
+def test_comment_fetcher_caps_at_twenty() -> None:
+    """每串取前 20 則留言（裁定 15：上限由 10 提到 20）。"""
+    assert collect.TOP_COMMENTS == 20
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -857,7 +1070,49 @@ def test_comment_fetcher_caps_at_ten() -> None:
         source="hn", url="https://news.ycombinator.com/item?id=42", title="t"
     )
 
-    assert len(comments) == 10
+    assert len(comments) == 20
+
+
+def test_hn_thread_url_resolves_item_id_from_title() -> None:
+    """HN 的引擎 url 常指向外部原文；thread.url 要回查 Algolia 的 item 連結。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/api/v1/search" in url:
+            return httpx.Response(
+                200,
+                json={"hits": [{"objectID": "999", "title": "Sonnet 5.5 review"}]},
+            )
+        return httpx.Response(200, json={"id": "999", "children": []})
+
+    fetcher = HttpCommentFetcher(client=httpx.Client(transport=httpx.MockTransport(handler)))
+
+    assert (
+        fetcher.thread_url(
+            source="hn", url="https://example.com/sonnet55-review", title="Sonnet 5.5 review"
+        )
+        == "https://news.ycombinator.com/item?id=999"
+    )
+    # Reddit 的 url 本身就是永久連結，不做替換。
+    assert (
+        fetcher.thread_url(
+            source="reddit",
+            url="https://www.reddit.com/r/x/comments/aaa/slug/",
+            title="t",
+        )
+        == "https://www.reddit.com/r/x/comments/aaa/slug/"
+    )
+
+
+def test_hn_thread_url_falls_back_to_original_when_lookup_fails() -> None:
+    """Algolia 查不到時沿用原 url，不讓整串失敗。"""
+    fetcher = HttpCommentFetcher(
+        client=httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(500)))
+    )
+
+    assert (
+        fetcher.thread_url(source="hn", url="https://example.com/x", title="Sonnet 5.5")
+        == "https://example.com/x"
+    )
 
 
 def test_comment_fetcher_unknown_source_returns_empty() -> None:
@@ -1133,6 +1388,7 @@ CATALOGUE: list[dict] = [
     {"id": "moonshotai/kimi-k3", "name": "Kimi K3"},
 ]
 SONNET5 = next(m for m in CATALOGUE if m["id"] == "anthropic/claude-sonnet-5")
+SONNET55_ENTRY = next(m for m in CATALOGUE if m["id"] == "anthropic/claude-sonnet-5.5")
 GPT6_SOL = next(m for m in CATALOGUE if m["id"] == "openai/gpt-6-sol")
 GLM_PRIME = next(m for m in CATALOGUE if m["id"] == "z-ai/glm-5.3-prime")
 GLM_FLASH = next(m for m in CATALOGUE if m["id"] == "z-ai/glm-5.3-flash")
@@ -1156,6 +1412,15 @@ def engine_result(text: str, slug: str = "post", source: str = "reddit") -> dict
 
 def classify(text: str, model: dict | None = None) -> collect.Attribution:
     return collect.classify_attribution(text, model or SONNET5, CATALOGUE)
+
+
+def classify_comment(
+    text: str, thread: dict | None = None, catalogue: list[dict] | None = None
+) -> collect.CommentAttribution:
+    """以測試清單跑留言層級歸屬（預設串屬 Claude Sonnet 5.5）。"""
+    return collect.classify_comment_attribution(
+        text, thread or SONNET55_ENTRY, catalogue or CATALOGUE
+    )
 
 
 def test_model_keys_are_family_class_version_variant() -> None:
@@ -1292,3 +1557,105 @@ def test_collect_summary_reports_misattributed(
 
     assert read_today(tmp_path) == []
     assert "誤歸屬 1" in capsys.readouterr().out
+
+# --- 留言層級歸屬（實作裁定 15 的五條優先序）--------------------------------
+
+
+def test_comment_own_exact_mention_is_self_attributed() -> None:
+    """第 1 條：留言自己精確提到清單內版本 → 歸它（自身歸屬，不是繼承）。"""
+    verdict = classify_comment("Sonnet 5.5 punches above its weight")
+    assert verdict.keep
+    assert not verdict.inherited
+    assert verdict.reason == "exact"
+    assert verdict.model_id == "anthropic/claude-sonnet-5.5"
+
+
+def test_comment_no_mention_inherits_thread() -> None:
+    """第 5 條：完全不提任何模型 → 繼承該串。"""
+    verdict = classify_comment("honestly it is fine I guess")
+    assert verdict.keep
+    assert verdict.inherited
+    assert verdict.reason == "inherited_no_mention"
+    assert verdict.model_id == "anthropic/claude-sonnet-5.5"
+
+
+def test_comment_same_family_brand_only_inherits() -> None:
+    """第 3 條：只提品牌字且屬串本身家族 → 繼承該串。"""
+    for text in ("Claude keeps winning", "Anthropic really cooks"):
+        verdict = classify_comment(text)
+        assert verdict.keep, text
+        assert verdict.reason == "inherited_brand_only", text
+        assert verdict.model_id == "anthropic/claude-sonnet-5.5", text
+
+
+def test_comment_other_family_brand_only_dropped() -> None:
+    """第 4 條：只提品牌字但屬其他家族 → 丟（無法判定是哪一版）。"""
+    verdict = classify_comment("Qwen is the real deal")
+    assert not verdict.keep
+    assert verdict.reason == "dropped_other_family"
+    assert verdict.key == "qwen"
+
+
+def test_comment_brand_words_of_two_families_dropped() -> None:
+    """同時提到兩個家族的品牌字 → 歸屬不明，丟。"""
+    verdict = classify_comment("Claude is fine but Gemini is better")
+    assert not verdict.keep
+    assert verdict.reason == "dropped_other_family"
+
+
+def test_comment_off_catalogue_version_dropped() -> None:
+    """第 2 條：只提「家族＋版本」但版本不在清單 → 丟。"""
+    verdict = classify_comment("Gemini 3.8 is so much better than this")
+    assert not verdict.keep
+    assert verdict.reason == "dropped_off_catalogue"
+
+
+def test_comment_two_catalogue_models_dropped() -> None:
+    """第 1 條的但書：同時精確提到兩個清單模型 → 丟（歸屬不明）。"""
+    verdict = classify_comment("Sonnet 5.5 and GPT-6 Sol both fail me")
+    assert not verdict.keep
+    assert verdict.reason == "dropped_multi_model"
+
+
+def test_comment_catalogue_plus_off_catalogue_dropped() -> None:
+    """提到清單內版本又提到清單外版本 → 沿用裁定 14 的嚴格度，丟。"""
+    verdict = classify_comment("Sonnet 5.5 is better than Sonnet 4.5")
+    assert not verdict.keep
+    assert verdict.reason == "misattributed"
+
+
+def test_comment_own_mention_can_override_thread_model() -> None:
+    """第 1 條：串屬 Sonnet 5.5、留言精確提 GPT-6 Sol → 歸 GPT-6 Sol。"""
+    verdict = classify_comment("GPT-6 Sol is honestly better")
+    assert verdict.keep
+    assert not verdict.inherited
+    assert verdict.reason == "exact_other_model"
+    assert verdict.model_id == "openai/gpt-6-sol"
+
+
+def test_comment_bare_generation_still_binds() -> None:
+    """裸世代（只寫「Gemini 2.5」）在該世代清單獨佔一席時算自身命中。"""
+    verdict = classify_comment("Gemini 2.5 still holds up", thread=GEMINI)
+    assert verdict.keep
+    assert not verdict.inherited
+    assert verdict.model_id == "google/gemini-2.5-pro"
+
+
+def test_comment_bare_generation_with_siblings_is_dropped() -> None:
+    """裸世代但該世代在清單裡有兩個變體（GLM 5.3 Prime／Flash）→ 無法判定，丟。"""
+    verdict = classify_comment("GLM 5.3 is fine", thread=GLM_PRIME)
+    assert not verdict.keep
+    assert verdict.reason == "dropped_off_catalogue"
+
+
+def test_comment_generic_model_word_inherits() -> None:
+    """「this model」不是品牌字 → 走第 5 條繼承。"""
+    verdict = classify_comment("This model got me through a rough week")
+    assert verdict.keep
+    assert verdict.reason == "inherited_no_mention"
+
+
+def test_brand_families_reports_every_family_mentioned() -> None:
+    assert collect.brand_families("Claude and Gemini") == {"anthropic", "google"}
+    assert collect.brand_families("nothing here") == set()
+    assert collect.brand_families("Anthropic") == {"anthropic"}

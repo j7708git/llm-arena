@@ -15,15 +15,17 @@ C9 起另含「留言逐則」抓取（實作裁定 13，見 :class:`HttpComment
 
 C9（實作裁定 13「留言逐則」）新增的 :class:`HttpCommentFetcher`：
 
-- Reddit 每個討論串取熱門前 :data:`TOP_COMMENTS` 則**留言**。優先走規格上的
+- Reddit 每個討論串取熱門前 :data:`TOP_COMMENTS` 則**留言**（裁定 15 由 10 提到 20）。
+  優先走規格上的
   ``.../comments/<id>/.json``；**本環境實測 keyless 一律 403**（2026-10-01，
   換 UA／old.reddit／api.reddit 都一樣），故 fallback 到 Reddit 仍免 key 開放的
   shreddit 留言端點 ``/svc/shreddit/comments/r/<sub>/t3_<id>``（回 HTML，留言內嵌為
   ``<shreddit-comment>`` 元素，已實測 200）。兩條路徑都解析成同一個結構。
 - HN 每個討論串取前 :data:`TOP_COMMENTS` 則**留言**，資料源是 Algolia
   ``/api/v1/items/<id>``（免 key，實測 200）。**HN 不公開留言分數**，故依
-  Algolia 回傳的樹狀順序（depth-first、上層留言優先）取前 N 則，此點已如實
-  記錄於 ``docs/progress-status.md``。
+  Algolia 回傳的樹狀順序（depth-first、上層留言優先）取前 N 則（N 為
+  :data:`TOP_COMMENTS`，裁定 15 提到 20），此點已如實記錄於
+  ``docs/progress-status.md``。
 - 兩來源的留言都轉成 :class:`ThreadComment`（``url``＝留言永久連結、
   ``author``＝留言者、``postedAt``＝留言時間、``text``＝去標籤後的留言原文）。
 
@@ -52,8 +54,9 @@ REDDIT_JSON_TEMPLATE = "https://www.reddit.com/comments/{id}/.json"
 HN_ALGOLIA_SEARCH = "https://hn.algolia.com/api/v1/search"
 HN_ALGOLIA_ITEM = "https://hn.algolia.com/api/v1/items/{id}"
 
-# C9：每個討論串取的熱門留言數（實作裁定 13）。
-TOP_COMMENTS = 10
+# C9：每個討論串取的熱門留言數（實作裁定 13）；裁定 15 由 10 提到 20。
+# Reddit 依 score 排序取前 N；HN 無公開分數，依 Algolia 樹狀順序取前 N。
+TOP_COMMENTS = 20
 
 # Reddit 要求可辨識的 User-Agent；HN Algolia 不挑。
 DEFAULT_USER_AGENT = "llm-arena-collect/0.1 (+https://github.com/jason-lab/llm-arena)"
@@ -282,7 +285,13 @@ class ThreadComment:
 
 
 class CommentFetcher(Protocol):
-    """留言抓取介面；`collect` 以注入方式使用，測試提供假物件。"""
+    """留言抓取介面；`collect` 以注入方式使用，測試提供假物件。
+
+    :meth:`thread_url` 是**選用**能力（裁定 15 要把主貼永久連結寫進 evidence 的
+    ``thread.url``）：Reddit 的引擎結果 url 本身就是永久連結，HN 的 url 常指向外部
+    原文，需回查 Algolia 拿 ``news.ycombinator.com/item?id=...``。測試注入的假抓取器
+    沒有實作它時，`collect` 直接沿用原 url。
+    """
 
     def thread_comments(self, *, source: str, url: str, title: str) -> list[ThreadComment]:
         """回傳該討論串的熱門留言；抓不到／無留言時回空清單（不丟例外）。"""
@@ -310,6 +319,8 @@ class HttpCommentFetcher:
             follow_redirects=True,
         )
         self._limit = limit
+        # 標題回查的結果快取：thread_url 與 thread_comments 共用，避免同一串查兩次。
+        self._hn_item_ids: dict[str, str | None] = {}
         # 統計供 run() 回報；鍵名固定方便測試。
         self.stats: dict[str, int] = {
             "reddit_json": 0,
@@ -318,6 +329,13 @@ class HttpCommentFetcher:
             "hn_ok": 0,
             "hn_failed": 0,
         }
+
+    def thread_url(self, *, source: str, url: str, title: str) -> str:
+        """回傳主貼的永久連結（裁定 15 的 ``thread.url``）。查不到就沿用原 url。"""
+        if source != "hn":
+            return url
+        object_id = self._hn_item_id(url, title)
+        return f"https://news.ycombinator.com/item?id={object_id}" if object_id else url
 
     def thread_comments(
         self, *, source: str, url: str, title: str
@@ -329,6 +347,7 @@ class HttpCommentFetcher:
         else:
             return []
         # 熱門前 N 則（Reddit 已按分數排序；HN 依樹狀順序，見模組 docstring）。
+        # 裁定 15：N 由 10 提到 20。
         return comments[: self._limit]
 
     # --- Reddit -----------------------------------------------------------
@@ -382,8 +401,17 @@ class HttpCommentFetcher:
 
     # --- Hacker News ------------------------------------------------------
 
-    def _hn_comments(self, url: str, title: str) -> list[ThreadComment]:
+    def _hn_item_id(self, url: str, title: str) -> str | None:
+        """HN story 的 item id：優先 url 上的 id，否則用標題回查（結果快取）。"""
+        cached = self._hn_item_ids.get(url)
+        if cached is not None:
+            return cached or None
         object_id = _hn_object_id(url) or _hn_object_id_from_title(self._client, title)
+        self._hn_item_ids[url] = object_id or ""
+        return object_id
+
+    def _hn_comments(self, url: str, title: str) -> list[ThreadComment]:
+        object_id = self._hn_item_id(url, title)
         if object_id is None:
             self.stats["hn_failed"] += 1
             return []

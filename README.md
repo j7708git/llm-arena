@@ -12,6 +12,9 @@
   2026-10-01 完成 C9：清單 v2（15 席）＋ Reddit／HN 留言逐則＋歸屬改版本精確比對，
   新池 `data/evidence/2026-10-01.jsonl` 已產（126 筆，全部留言級／推文級且 url 可連回）。
   2026-10-02 以 `qwen3.7-flash` 單評審重評並產出 **v2 榜單**（15 席，網站即讀此檔）。
+  2026-10-02 完成 C10：**歸屬與情緒分離**——主貼決定歸屬、留言繼承（裁定 15），
+  每串留言上限 20、evidence 加 `thread` 欄位（evidence schema v1.3）、`scores.json`
+  契約不變（仍 v1.2）。樣本數現況見下方「資料現況」。
   詳見 `docs/plan.md` 與 `docs/calibration-report.md`
 
 ## 產出什麼
@@ -19,7 +22,7 @@
 | 檔案 | 內容 |
 | --- | --- |
 | `data/scores.json` | 算好的分數（網站唯一需要的輸入） |
-| `data/evidence/*.jsonl` | 原始**留言／推文**與引用，讓每個分數都可回溯審核 |
+| `data/evidence/*.jsonl` | 原始**留言／推文**與引用（含 `thread` 歸屬依據），讓每個分數都可回溯審核 |
 | `data/evidence/archive/` | 舊池（2026-09-29，粒度為「一個討論串」）留作稽核對照，不入聚合 |
 
 ## 方法（概要）
@@ -30,11 +33,14 @@
    保留 `gemini-2.5-pro` 等 5 席，新增研究報告的 A 檔 5 席＋B 檔 5 席
    （`docs/research/model-roster-survey.md`，契約見 `docs/plan.md` 裁定 14）。
 2. **社群收集**：排程 agent 使用 `last30days` 技能抓近 30 天社群討論（Reddit／HN／X）。
-   Reddit／HN 改「**留言逐則**」：主貼不評分，每個討論串取熱門前 10 則**留言**，
+   Reddit／HN 改「**留言逐則**」：主貼不評分，每個討論串取熱門前 20 則**留言**，
    每則留言各自成一筆 evidence（裁定 13）；X 維持每則推文一筆。
-   歸屬規則已收緊為**版本精確比對**（裁定 14）：只提品牌字無版本號 → 丟；
+   歸屬規則為**版本精確比對**（裁定 14）：只提品牌字無版本號 → 丟；
    提到「家族＋版本」但該版本不在清單 → 丟（misattributed）；暱稱必綁世代
    （`GPT-6 Sol` ≠ `GPT-5.6 Sol`，`GLM 5.3 Prime` ≠ `GLM 5.3 Flash`）。
+   **歸屬與情緒分離**（裁定 15，C10）：主貼（title＋body）決定**整串**的模型，
+   留言**繼承該串**——因為留言本來就不會重複寫出模型版本（「它好爛」「這代超強」）。
+   留言自己精確提到清單內某版本時歸那個（可改判），清單外版本／他家族品牌字 → 丟。
 3. **評分（LLM 單一評審）**：`qwen3.7-flash`（經 OpenRouter）對逐則貼文**一次**回答
    六題（overall＋五面向、溫度 0、JSON 輸出）。
    歷史：初版為四人評審團多數決，2026-10-01 owner 裁定收斂為單一評審——
@@ -64,16 +70,22 @@
       not-discussed baseline」（not-discussed 佔九成時絕對 0.80 是誤導性指標）；
       有討論列數 <10 的面向標『樣本不足』，站方呈現須標註各面向可信度。
 
-## 資料現況（2026-10-02，v2 榜單已產出）
+## 資料現況（2026-10-02，C10 重收集後）
 
 - `data/models.json`：**15 席**，OpenRouter 實查全部有定價與 context（0 缺欄）。
-- `data/evidence/2026-10-01.jsonl`：**126 筆**（reddit 54／x 50／hn 23），
-  每筆的 url 都可連回、text 都精確提及該 row 的模型版本
-  （`.venv/bin/python tools/verify_pool.py data/evidence/2026-10-01.jsonl` 可複驗）。
-- `data/scores.json`：**v2 榜單已產出**（2026-10-02；15 席、judge=`llm-jury@557e1059`、
-  `sourcesCovered=[hn,reddit,x]`）。一筆＝一則留言、樣本小（2~25）＋K=10 收縮，
-  分數集中 43~60、`confidence` 低，呈現須帶樣本數與可信度；Gemini 2.5 Pro 第 2 名
-  是緬懷文小樣本效應。重跑指令：`arena score` → `arena build` → `arena validate`；
+- `data/evidence/2026-10-01.jsonl`：**1455 筆**（reddit 970／hn 377／x 108），
+  一筆＝一則留言或一則推文。**1270 筆留言帶 `thread` 欄位**（95 個討論串，
+  平均 13.4 則／串、上限 20）；108 筆 X 推文與 77 筆 C9 舊留言列不帶（v1.2 形狀）。
+  歸屬來源：自身精確提及 240 筆（16.5%）／繼承自主貼 1195 筆（82.1%），
+  另有 20 筆（1.4%）因主貼**標題**不帶版本號而無法用 `thread.title` 佐證
+  （見 `docs/progress-status.md` 第 8 節待裁定項）。
+  每筆的 url 都可連回（`tools/verify_pool.py` 可複驗）。
+- `data/scores.json`：**v3 榜單已產出**（2026-10-02；15 席、judge=`llm-jury@557e1059`、
+  `sourcesCovered=[hn,reddit,x]`、`schemaVersion` 仍 1.2）。樣本數 2~311，
+  `positiveRate` 0.16~0.31，K=10 收縮後分數集中 40~60、`confidence` 0.00~0.34。
+  **呈現務必帶樣本數與可信度**；低樣本席（Claude Sonnet 5 n=2、GLM 5.3 Prime n=4、
+  Gemini 2.5 Pro n=16、Qwen3.8 Max n=22）的名次是小樣本效應。
+  重跑指令：`arena score` → `arena build` → `arena validate`；
   key 來源見下（dotenv 鏈，本專案 `.env` 已指向中央金鑰檔，已 gitignore）。
 
 ## 目錄結構
@@ -170,7 +182,7 @@ evidence。輸出採**原子寫入**（先寫同目錄暫存檔再 rename），�
 > 歷史選型理由與坑清單保留在 `docs/research/jev-scoring.md` 與
 > `docs/research/laya-usage-accuracy.md`。
 
-### 資料契約（schema v1.2）
+### 資料契約（scores.json v1.2／evidence v1.3）
 
 evidence 的每則貼文以 `votes` 記錄評審的**判定結果**（六題：`overall` 總評＋
 五個面向 `quality`／`speed`／`tokenEfficiency`／`tokenUsage`／`priceValue`），
@@ -178,6 +190,11 @@ evidence 的每則貼文以 `votes` 記錄評審的**判定結果**（六題：`
 `prob`＝同票比例、票數相同（平手）的面向 `label`／`prob` 為 `null`（視同資料不足，
 build 自動排除）。評審的原始票保留在 `juryVotes.<面向>.<評審短名>`。未評分時
 `votes`／`juryVotes`／`judge` 為 `null`，結構仍合法。
+
+**evidence v1.3 的 `thread` 欄位**（裁定 15）：每則留言 row 可帶
+`thread = {url, title, modelId}`，記錄它繼承（或改判自）哪個主貼、主貼歸屬哪個模型。
+欄位**可選** → `arena validate` 同時接受 v1.2（無 `thread`，含舊池與 X 推文）
+與 v1.3（有 `thread`）兩種列；`scores.json` 契約不變（仍 v1.2）。
 
 rubric（題目文字見 `src/arena/score.py` 的 `QUESTION`；`overall` 用 positive／negative／
 neutral，五個面向用 positive／negative／`not-discussed`）：
@@ -278,25 +295,36 @@ X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控）�
 流程重點：
 
 - **粒度：留言逐則（裁定 13）**：Reddit／HN 的**主貼不評分**（社群主貼多為提問、
-  不帶態度），每個討論串改取**熱門前 10 則留言**，**每則留言各自成一筆**：
+  不帶態度），每個討論串改取**熱門前 20 則留言**（裁定 15 由 10 提到 20），
+  **每則留言各自成一筆**：
   `url` 是留言永久連結、`author` 是留言者、`postedAt` 是留言時間、`text` 是留言原文。
-  留言不足 10 則照實取，0 則則該串不產生資料。X 維持每則推文一筆（X 池無留言結構）。
+  留言不足 20 則照實取，0 則則該串不產生資料。X 維持每則推文一筆（X 池無留言結構）。
   留言來源：Reddit `.json`（本環境 keyless 一律 403，自動退到 Reddit 仍免 key 開放的
   shreddit 留言端點 `/svc/shreddit/comments/r/<sub>/t3_<id>`，已實測可用）、
   HN Algolia `/api/v1/items/<id>`（免 key）。> HN 不公開留言分數，故 HN 依 Algolia
-  回傳的樹狀順序（上層留言優先）取前 10 則，不是依熱門度排序。
+  回傳的樹狀順序（上層留言優先）取前 20 則，不是依熱門度排序。
 - **過濾**：只留 `reddit`／`hackernews`／`x`（`source` 白名單，擋掉 jobs 等雜訊）；
   排除非英文貼文（拉丁字母比例 < 0.6；評分 rubric 為英文）；缺 `url`／時間者丟棄。
-- **歸屬：版本精確比對（裁定 14，取代 C6 的歸屬三態）**：文字必須以**精確版本**提及
-  query 模型才採計（`Sonnet 5.5` 命中 `claude-sonnet-5.5`、`gpt-6-astra` 也算），
-  版本後不得再接數字，故 `5.5` 不會命中 `5.55`。只提品牌字無版本號 → 丟
-  （`只提品牌字`）；提到「家族＋版本」但該版本不在清單（`Gemini 3.8`、`Sonnet 4.5`）
-  → 丟並計入 `誤歸屬`；完全沒提模型 → 丟（`沒提任何模型`）。暱稱與變體後綴
-  （Prime／Flash／FlashX／Max／Sol／Luna／Terra／Astra）**必須綁定世代**：
-  `GPT-6 Sol` ≠ `GPT-5.6 Sol`、`GLM 5.3 Prime` ≠ `GLM 5.3 Flash`；只有該世代在清單
-  裡獨佔一席時，社群只寫世代也算命中（例：`Gemini 2.5`）。規格型變體
-  （`Qwen3.8-27B`／`Qwen3.8-2.4T`，即 `\d+[bmt]`）也當變體綁世代，
-  不會被算成 `Qwen3.8 Max` 的證據。
+- **歸屬：主貼定歸屬、留言繼承（裁定 15，取代「每筆留言都要自己提到版本」）**
+  兩層判定：
+  - **串層級**（`classify_attribution`，裁定 14 的版本精確比對）：主貼 title＋body 必須
+    精確提及清單內某版本才通過；未通過的串，其所有留言皆丟（且此時不抓留言 API）。
+    只提品牌字無版本號 → 丟；提到「家族＋版本」但版本不在清單（`Gemini 3.8`）
+    → 丟（misattributed）。暱稱與變體後綴**必須綁定世代**：`GPT-6 Sol` ≠ `GPT-5.6 Sol`、
+    `GLM 5.3 Prime` ≠ `GLM 5.3 Flash`；該世代在清單裡獨佔一席時社群只寫世代也算命中
+    （例：`Gemini 2.5`）。規格型變體（`Qwen3.8-27B`／`Qwen3.8-2.4T`）也綁世代。
+  - **留言層級**（`classify_comment_attribution`，五條優先序）：
+    1. 留言自己精確提到清單內某版本 → 歸那個（即使與串不同；同時提到兩個以上清單
+       模型、或提到清單內又提到清單外版本 → 丟）；
+    2. 只提「家族＋版本」但不在清單 → 丟；
+    3. 只提品牌字且屬**串本身家族** → 繼承該串；
+    4. 只提品牌字且屬**其他家族** → 丟（無法判定是哪一版）；
+    5. 完全不提任何模型 → 繼承該串。
+- **`thread` 欄位（evidence schema v1.3）**：每則留言 row 帶
+  `thread = {url, title, modelId}`——主貼永久連結、主貼標題、**該串**歸屬的模型，
+  讓歸屬依據可回溯（站方與稽核可分辨「這則自己提到模型」或「繼承主貼」）。
+  HN 的 `thread.url` 由 Algolia 以標題回查（引擎給的 url 常是外部原文）。
+  X 推文**不帶**此欄。`scores.json` 契約不變（仍 v1.2）。
 - **`text`**：X 是 `title` ＋ `summary` 合成、Reddit／HN 是留言原文，一律
   **截斷至 1200 字元**（控制單則的評分 prompt 大小與成本）。
 - **`hash`**：正規化文字（小寫、空白壓扁）的 sha256，**跨所有 evidence 檔去重**
