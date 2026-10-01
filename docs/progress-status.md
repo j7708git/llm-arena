@@ -122,21 +122,33 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
 3. **研究報告 §5 的 `qwen/qwen3.8-max` 在 OpenRouter 不存在**（2026-10-01 實查
    `/api/v1/models` 只有 `qwen/qwen3.8-max-0902` 與 `qwen/qwen3.8-max-prime`）。
    清單採實際存在的 `qwen/qwen3.8-max-0902`，顯示名仍為 `Qwen3.8 Max`。
+4. **規格型變體要綁世代**（實作時補的規則，研究報告未列）：`Qwen3.8-27B`／
+   `Qwen3.8-2.4T` 是不同的 SKU，若只比「版本＋Max」，這些貼文會被算成
+   `Qwen3.8 Max` 的證據（首輪收集實際命中 16 筆）。故偵測式把
+   `\d+[bmt]`（27b／30b／2.4t）也當變體，這 16 筆已在新池剔除。
+5. **1 則 X 推文在驗收時已被刪**（`@rugnasyab/2105637339691426009`，X 回 404），
+   連線全池複驗時剔除。X 來源有這種「抓到後被刪」的流失率，站方若要顯示
+   單筆連結應容許偶發失效。
 
 **新池現況**（`data/evidence/2026-10-01.jsonl`，`arena collect` 單趟 ~24 分鐘）：
 
 - **126 筆**，來源 reddit 54／x 50／hn 23；**15 席全部有資料，無 0 筆者**。
 - 分布（留言級後每模型筆數落差較大）：Opus 5.5 **25**、GLM 5.3 Flash **16**、
-  Kimi K3 **13**、Sonnet 5.5 **9**、Grok 4.7 **9**、GPT-6 Astra **9**、
-  DeepSeek V4.1 Flash **9**、Opus 5 **8**、Gemini 2.5 Pro **7**、GPT-5.6 Luna **7**、
+  Kimi K3 **13**、Sonnet 5.5 **9**、Grok 4.7 **9**、DeepSeek V4.1 Flash **9**、
+  Opus 5 **8**、GPT-6 Astra **8**、Gemini 2.5 Pro **7**、GPT-5.6 Luna **7**、
   GPT-6 Sol **4**、GLM 5.3 Prime **4**、Qwen3.8 Max **3**、Sonnet 5 **2**、
   Fable 5.1 **2**。`author` 無 null（留言 API 都帶回留言者）。
 - 收集摘要：15 模型、328 個討論串、無留言 49、**只提品牌字 409**、
   **沒提任何模型 1582**、**誤歸屬 410**（清單外版本）、非英文 32。
   規則擋掉的比例遠高於舊規則，但留下的每一筆都精確提及該模型版本。
 - 驗收工具 `tools/verify_pool.py`：全池 126 筆 **url 皆可連回（HTTP 200）**、
-  歸屬判定 0 不通過（複驗時另清掉 1 則已刪推文 `@rugnasyab/2105637339691426009`，
-  X 回 404）。
+  歸屬判定 0 不通過。
+- 人工抽核 20 筆（`random.seed(20261001)`）逐筆看過：url 可連、留言／推文確實在談
+  該 row 的版本。較邊緣但判定正確的兩例——
+  `https://www.reddit.com/r/LocalLLM/comments/1woq7cd/.../pbp5qaz/`
+  （講「Qwen 3.8」的推論引擎加速，該世代在清單裡只有 Max 一席故採計）、
+  `https://www.reddit.com/r/LocalLLaMA/comments/1wpkz0o/.../pbwxtw8/`
+  （一句裡同時提 GLM 5.3 Flash 與 DeepSeek，但 DeepSeek 未帶版本號，屬非模型命中）。
 
 **score／build 待 key**（2026-10-01）：本環境無 `OPENROUTER_API_KEY`，故
 `arena score` 如實報錯不降級（`arena build` 隨後因全池未評分而拒絕更新

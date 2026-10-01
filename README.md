@@ -265,7 +265,9 @@ X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控）�
   → 丟並計入 `誤歸屬`；完全沒提模型 → 丟（`沒提任何模型`）。暱稱與變體後綴
   （Prime／Flash／FlashX／Max／Sol／Luna／Terra／Astra）**必須綁定世代**：
   `GPT-6 Sol` ≠ `GPT-5.6 Sol`、`GLM 5.3 Prime` ≠ `GLM 5.3 Flash`；只有該世代在清單
-  裡獨佔一席時，社群只寫世代也算命中（例：`Gemini 2.5`）。
+  裡獨佔一席時，社群只寫世代也算命中（例：`Gemini 2.5`）。規格型變體
+  （`Qwen3.8-27B`／`Qwen3.8-2.4T`，即 `\d+[bmt]`）也當變體綁世代，
+  不會被算成 `Qwen3.8 Max` 的證據。
 - **`text`**：X 是 `title` ＋ `summary` 合成、Reddit／HN 是留言原文，一律
   **截斷至 1200 字元**（控制單則的評分 prompt 大小與成本）。
 - **`hash`**：正規化文字（小寫、空白壓扁）的 sha256，**跨所有 evidence 檔去重**
