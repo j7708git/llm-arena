@@ -70,9 +70,10 @@
   每筆的 url 都可連回、text 都精確提及該 row 的模型版本
   （`.venv/bin/python tools/verify_pool.py data/evidence/2026-10-01.jsonl` 可複驗）。
 - `data/scores.json`：**仍是舊池的榜單**（8 席、含已移除的舊世代模型）。`arena score`
-  需要 OpenRouter API key，來源二擇一：環境變數 `OPENROUTER_API_KEY`，或金鑰檔
-  （預設 `~/.config/llm-arena/openrouter.key`，權限 600、放 repo 之外；路徑可用
-  `OPENROUTER_API_KEY_FILE` 覆寫）。設定後依序跑 `score` → `build` → `validate`
+  需要 OpenRouter API key，來源依序（2026-10-02 dotenv 鏈）：環境變數
+  `OPENROUTER_API_KEY`／`OPENROUTER_KEY` → 專案自己的 `.env`（已 gitignore）
+  → 中央金鑰檔（`ARENA_ENV_FILE` 指定，預設 `~/.keys/.env`）。
+  本專案的 `.env` 已指向中央金鑰檔。設定好後依序跑 `score` → `build` → `validate`
   即換成 v2 榜單（聚合公式不動）。
 
 ## 目錄結構

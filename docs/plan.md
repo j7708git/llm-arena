@@ -160,10 +160,11 @@
       （多數決規則——prob=同票比例、2/4 平手記 null——僅在成員數 >1 時適用。）
     - 呼叫走 OpenRouter `chat/completions`；**預設同步呼叫**（owner 裁定 2026-09-30，
       batch 非同步等太久）；`--batch` 可切 batch API（半價、24h 內回，實測小批次
-      也要 ~8 分鐘/家）。API key 解析順序（2026-10-02 擴充）：環境變數
-      `OPENROUTER_API_KEY` 優先；其次金鑰檔（預設 `~/.config/llm-arena/openrouter.key`，
-      路徑可用 `OPENROUTER_API_KEY_FILE` 覆寫，權限建議 600、置於 repo 之外）。
-      兩者皆缺時 score 明確報錯不靜默降級（錯誤訊息同時指出兩個來源）。
+      也要 ~8 分鐘/家）。API key 解析順序（2026-10-02 擴充，dotenv 鏈）：
+      環境變數 `OPENROUTER_API_KEY`／`OPENROUTER_KEY` → **專案自己的 `.env`**
+      （`<repo>/.env`，已 gitignore；`ARENA_DOTENV` 可覆寫）→ **中央金鑰檔**
+      （預設 `~/.keys/.env`，可由環境變數或專案 `.env` 內的 `ARENA_ENV_FILE` 指定）。
+      三者皆缺時 score 明確報錯不靜默降級（訊息列出全部來源）。
     - 成本：單一評審一趟 ≈ $0.008（216 則 × 6 題，state~400/rubric~350/out~120 tok）。
 
 ## 實作裁定 13 — 評分粒度改「留言逐則」（v1.3，2026-10-01 owner 裁定）
