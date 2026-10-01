@@ -6,11 +6,12 @@
 網站（[`jason-lab`](../jason-lab)）讀取本 repo 的資料產物來呈現排行榜。
 
 - 定位：真的能跑、能重跑的評測工具，而不是展示品
-- 狀態：**v1.2 已上線**——CLI 五個子命令（`fetch-models`／`collect`／`score`／`build`／
-  `validate`）皆已實作；C5 校準驗證已通過（gold v2、overall 0.8174 過關，
+- 狀態：**v1.3 資料管線運作中**——CLI 五個子命令（`fetch-models`／`collect`／`score`／
+  `build`／`validate`）皆已實作；C5 校準驗證已通過（gold v2、overall 0.8174 過關，
   owner 認可 2026-09-30，`meta.judge.calibrated: true`）。
   2026-10-01 完成 C9：清單 v2（15 席）＋ Reddit／HN 留言逐則＋歸屬改版本精確比對，
   新池 `data/evidence/2026-10-01.jsonl` 已產（126 筆，全部留言級／推文級且 url 可連回）。
+  2026-10-02 以 `qwen3.7-flash` 單評審重評並產出 **v2 榜單**（15 席，網站即讀此檔）。
   詳見 `docs/plan.md` 與 `docs/calibration-report.md`
 
 ## 產出什麼
@@ -63,7 +64,7 @@
       not-discussed baseline」（not-discussed 佔九成時絕對 0.80 是誤導性指標）；
       有討論列數 <10 的面向標『樣本不足』，站方呈現須標註各面向可信度。
 
-## 資料現況（2026-10-01，C9 之後）
+## 資料現況（2026-10-02，v2 榜單已產出）
 
 - `data/models.json`：**15 席**，OpenRouter 實查全部有定價與 context（0 缺欄）。
 - `data/evidence/2026-10-01.jsonl`：**126 筆**（reddit 54／x 50／hn 23），
@@ -80,8 +81,10 @@
 ```
 src/               fetch-models / collect / score / build / validate（＋calibrate 標註工具）
 data/              scores.json、evidence/*.jsonl、calibration/（C5 標註工作檔）
+tools/             verify_pool.py（池品質驗收）、gold 標註與驗證工具
 tests/
 docs/              plan.md、annotation-guide.md、research/
+.env.example       環境設定範例（複製為 .env；.env 已 gitignore）
 ```
 
 ## CLI
@@ -115,10 +118,24 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/python -m pytest
 ```
 
-### 評分相依（`arena score`，C8 LLM 評審團）
+### 評分相依（`arena score`，LLM 單一評審）
 
-評分走 OpenRouter API，需要環境變數 `OPENROUTER_API_KEY`；**缺 key 時明確報錯，
-不會靜默降級**。預設為同步呼叫（溫度 0）；`--batch` 可切 batch API（半價、非同步，
+評分走 OpenRouter API，需要 OpenRouter API key；**缺 key 時明確報錯，不會靜默降級**。
+金鑰來源依序（dotenv 鏈，2026-10-02）：
+
+1. 行程環境變數 `OPENROUTER_API_KEY`（或別名 `OPENROUTER_KEY`）
+2. **專案自己的 `.env`**（`<repo>/.env`，已 gitignore；`ARENA_DOTENV` 可覆寫）
+3. **中央金鑰檔**（預設 `~/.keys/.env`；由環境變數或 `.env` 內的 `ARENA_ENV_FILE` 指定）
+
+一份 key 要給多個程式共用時，建議把 key 放中央金鑰檔，各專案 `.env` 只寫
+`ARENA_ENV_FILE=~/.keys/.env`（設定範例見 `.env.example`）：
+
+```bash
+cp .env.example .env            # 方式 A：直接在 .env 寫 OPENROUTER_API_KEY=...
+                                # 方式 B：.env 只寫 ARENA_ENV_FILE=~/.keys/.env
+```
+
+預設為同步呼叫（溫度 0）；`--batch` 可切 batch API（半價、非同步，
 批次要等數分鐘起跳），`ARENA_SCORE_NO_BATCH=1` 可強制同步。
 
 ```bash
@@ -136,8 +153,18 @@ ARENA_EVIDENCE_FILES=data/evidence/2026-10-01.jsonl .venv/bin/arena score
 `judge`（`llm-jury@<membersHash 前 8 碼>`，現為 `llm-jury@557e1059`）回填進
 evidence。輸出採**原子寫入**（先寫同目錄暫存檔再 rename），中途失敗不會留下
 半截 jsonl；已有 `votes` 的行會跳過，因此可重複執行。單一評審成本約
-**每千則 $0.04**（216 則 × 6 題約 $0.008；原四人多數決為 $0.13）。
+**每千則 $0.04**（126 則 × 6 題約 $0.005；原四人多數決為 $0.13）。
 評審名單與契約見 `docs/plan.md` 實作裁定 12。
+
+**完整重跑**（清單與歸屬規則變更後，2026-10-02 實測）：
+
+```bash
+.venv/bin/arena fetch-models                  # 清單 v2 → data/models.json
+.venv/bin/arena collect                       # 新池（慢，實測約 24 分鐘，建議丟背景）
+.venv/bin/arena score                         # 逐則評分（需 key）
+.venv/bin/arena build                         # 產出 data/scores.json（自動 validate）
+.venv/bin/arena validate data/scores.json data/evidence/2026-10-01.jsonl
+```
 
 > 舊評分器 `laya`（JEV 家族、CPU 本地推論）的安裝與調校說明已隨其淘汰移除；
 > 歷史選型理由與坑清單保留在 `docs/research/jev-scoring.md` 與
@@ -379,5 +406,10 @@ export OPENROUTER_API_KEY=sk-or-...
 ## 注意事項
 
 - 近 30 天窗口＝**近期聲量**，會偏袒剛發布／剛洗版的模型，輸出必須標示。
+- **樣本數不等於人氣**：搜尋引擎每次查詢有回傳上限（每來源 `per_stream_limit=12`、
+  `pool_limit=40`），各模型筆數趨於平均是截斷造成的假象。榜單呈現須以「社群聲量
+  代理指標」定位，不要把 `sampleSize` 當成熱門度條。
+- 現在一筆＝**一則留言／推文**，單一模型樣本量小（2~25）＋K=10 收縮，分數會集中在
+  50 附近；呈現務必帶樣本數與 `confidence`，並把「樣本不足」的面向照實標示。
 - 不要讓模型直接「打一個分數」，分數必須可由公式重算。
 - 現在**不需要資料庫**：原始證據與分數都以檔案進 git，有 commit history 可追溯。
