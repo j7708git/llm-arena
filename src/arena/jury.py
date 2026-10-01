@@ -25,6 +25,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 import httpx
@@ -66,6 +67,10 @@ BATCH_NOT_FOUND_GRACE_SECONDS = 600.0
 
 # API key 環境變數（缺 key 明確報錯，不靜默降級）。
 API_KEY_ENV = "OPENROUTER_API_KEY"
+# 金鑰檔路徑覆寫（環境變數）：非預設環境與測試用。
+API_KEY_FILE_ENV = "OPENROUTER_API_KEY_FILE"
+# 預設金鑰檔：放在 repo 之外，避免誤入版控（owner 裁定 2026-10-02）。
+DEFAULT_API_KEY_FILE = Path.home() / ".config" / "llm-arena" / "openrouter.key"
 
 SYSTEM_PROMPT = (
     "You are a strict, impartial annotation judge for a dataset that measures "
@@ -572,21 +577,44 @@ class JuryPredictor:
                 per_state[index][member] = labels
 
 
-def build_jury_predictor(*, use_batch: bool) -> JuryPredictor:
-    """由環境變數組出正式評審團預測器；缺 ``OPENROUTER_API_KEY`` 時明確報錯。"""
+def api_key_file_path() -> Path:
+    """回傳金鑰檔路徑：``OPENROUTER_API_KEY_FILE`` 可覆寫，預設 :data:`DEFAULT_API_KEY_FILE`。"""
+    override = os.environ.get(API_KEY_FILE_ENV, "").strip()
+    return Path(override).expanduser() if override else DEFAULT_API_KEY_FILE
+
+
+def resolve_api_key() -> str:
+    """解析 OpenRouter API key：環境變數優先，其次金鑰檔；都沒有則明確報錯。
+
+    金鑰檔只是一行 key（前後空白會被 strip），放在 repo 之外避免誤入版控。
+    """
     api_key = os.environ.get(API_KEY_ENV, "").strip()
-    if not api_key:
-        raise ScoreError(
-            f"缺少 {API_KEY_ENV} 環境變數；arena score 需要 OpenRouter API key "
-            "才能呼叫評審團（不靜默降級）。請先 "
-            f"`export {API_KEY_ENV}=sk-or-...`。"
-        )
-    return JuryPredictor(OpenRouterChatClient(api_key), use_batch=use_batch)
+    if api_key:
+        return api_key
+    path = api_key_file_path()
+    try:
+        api_key = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        api_key = ""
+    if api_key:
+        return api_key
+    raise ScoreError(
+        f"缺少 {API_KEY_ENV} 環境變數、且金鑰檔 {path} 不存在或為空；arena score "
+        "需要 OpenRouter API key 才能呼叫評審團（不靜默降級）。請擇一設定："
+        f"`export {API_KEY_ENV}=sk-or-...`，或把 key 寫入 {path}（chmod 600）。"
+    )
+
+
+def build_jury_predictor(*, use_batch: bool) -> JuryPredictor:
+    """組出正式評審團預測器；key 來源見 :func:`resolve_api_key`，缺 key 明確報錯。"""
+    return JuryPredictor(OpenRouterChatClient(resolve_api_key()), use_batch=use_batch)
 
 
 __all__ = [
     "API_KEY_ENV",
+    "API_KEY_FILE_ENV",
     "BATCH_SUFFIX",
+    "DEFAULT_API_KEY_FILE",
     "DEFAULT_BACKOFF_SECONDS",
     "DEFAULT_BASE_URL",
     "DEFAULT_BATCH_TIMEOUT_SECONDS",
@@ -601,6 +629,7 @@ __all__ = [
     "OpenRouterChatClient",
     "SYSTEM_PROMPT",
     "aggregate_member_labels",
+    "api_key_file_path",
     "api_model_id",
     "build_jury_predictor",
     "build_messages",
@@ -608,4 +637,5 @@ __all__ = [
     "member_short_name",
     "members_hash",
     "parse_member_labels",
+    "resolve_api_key",
 ]

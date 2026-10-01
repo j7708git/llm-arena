@@ -691,6 +691,66 @@ def test_build_jury_predictor_reads_env(monkeypatch: pytest.MonkeyPatch) -> None
     assert predictor.judge == jury_judge()
 
 
+# --- 金鑰來源（環境變數優先、其次金鑰檔）--------------------------------------
+
+
+def test_resolve_api_key_env_wins_over_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    key_file = tmp_path / "openrouter.key"
+    key_file.write_text("sk-or-from-file\n", encoding="utf-8")
+    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(key_file))
+    monkeypatch.setenv(jury.API_KEY_ENV, "sk-or-from-env")
+    assert jury.resolve_api_key() == "sk-or-from-env"
+
+
+def test_resolve_api_key_reads_file_when_env_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    key_file = tmp_path / "openrouter.key"
+    key_file.write_text("  sk-or-from-file\n\n", encoding="utf-8")
+    monkeypatch.delenv(jury.API_KEY_ENV, raising=False)
+    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(key_file))
+    assert jury.resolve_api_key() == "sk-or-from-file"
+
+
+def test_resolve_api_key_reports_both_sources(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from arena.score import ScoreError
+
+    missing = tmp_path / "nope" / "openrouter.key"
+    monkeypatch.delenv(jury.API_KEY_ENV, raising=False)
+    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(missing))
+    with pytest.raises(ScoreError) as excinfo:
+        jury.resolve_api_key()
+    message = str(excinfo.value)
+    assert "OPENROUTER_API_KEY" in message
+    assert str(missing) in message
+
+
+def test_resolve_api_key_rejects_blank_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from arena.score import ScoreError
+
+    key_file = tmp_path / "openrouter.key"
+    key_file.write_text("   \n", encoding="utf-8")
+    monkeypatch.delenv(jury.API_KEY_ENV, raising=False)
+    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(key_file))
+    with pytest.raises(ScoreError):
+        jury.resolve_api_key()
+
+
+def test_api_key_file_path_default_and_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv(jury.API_KEY_FILE_ENV, raising=False)
+    assert jury.api_key_file_path() == jury.DEFAULT_API_KEY_FILE
+    monkeypatch.setenv(jury.API_KEY_FILE_ENV, str(tmp_path / "k"))
+    assert jury.api_key_file_path() == tmp_path / "k"
+
+
 def test_client_rejects_empty_key() -> None:
     from arena.score import ScoreError
 

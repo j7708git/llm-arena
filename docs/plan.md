@@ -160,11 +160,54 @@
       （多數決規則——prob=同票比例、2/4 平手記 null——僅在成員數 >1 時適用。）
     - 呼叫走 OpenRouter `chat/completions`；**預設同步呼叫**（owner 裁定 2026-09-30，
       batch 非同步等太久）；`--batch` 可切 batch API（半價、24h 內回，實測小批次
-      也要 ~8 分鐘/家）。API key 從環境變數
-      `OPENROUTER_API_KEY` 讀；缺 key 時 score 明確報錯不靜默降級。
+      也要 ~8 分鐘/家）。API key 解析順序（2026-10-02 擴充）：環境變數
+      `OPENROUTER_API_KEY` 優先；其次金鑰檔（預設 `~/.config/llm-arena/openrouter.key`，
+      路徑可用 `OPENROUTER_API_KEY_FILE` 覆寫，權限建議 600、置於 repo 之外）。
+      兩者皆缺時 score 明確報錯不靜默降級（錯誤訊息同時指出兩個來源）。
     - 成本：單一評審一趟 ≈ $0.008（216 則 × 6 題，state~400/rubric~350/out~120 tok）。
 
+## 實作裁定 13 — 評分粒度改「留言逐則」（v1.3，2026-10-01 owner 裁定）
+
+- Reddit／HN：**主貼不評分**（社群主貼多為提問，不帶態度）；每個討論串取
+  **熱門前 10 則留言**（依 Reddit score／HN Algolia 排序），**每則留言自成
+  evidence row**：`url`＝留言永久連結、`author`＝留言者、`postedAt`＝留言時間、
+  `text`＝留言原文。留言不足 10 則照實取，0 則則該串不產生資料。
+- X：維持每則推文一筆（X 池本就無留言結構）。
+- 聚合公式（K=10＋Wilson）、schema 欄位與 `votes`／`juryVotes`／`judge` 語意不變；
+  變的只是 evidence 的「一筆」從「一個串」變成「一則留言」。
+- 動機：串內正負意見黏成一票會互相抵銷，違反「逐則判斷社群態度後聚合」的原始設計。
+
+## 實作裁定 14 — 清單 v2＋歸屬規則收緊（2026-10-01 owner 裁定）
+
+依 `docs/research/model-roster-survey.md`（X 池 55 筆掃描，清單確認以 X 為準）：
+
+- **移除**：`anthropic/claude-sonnet-4`（X 0/2 命中，皆在聊 5.5）、
+  `openai/gpt-5`（1/7，其餘在聊 GPT-5.6／6 系列）、`deepseek/deepseek-v3.1`（過時）。
+- **保留**：`google/gemini-2.5-pro`（X 6/7 真討論——社群緬懷文）與其餘現行模型。
+- **新增 A 檔**：Claude Opus 5.5、Claude Sonnet 5、GPT-6 Astra、GLM 5.3 Flash、
+  DeepSeek V4.1 Flash。
+- **新增 B 檔**（標邊緣）：Qwen3.8 Max、Claude Opus 5、Kimi K3、Claude Fable 5.1、
+  GPT-5.6。確切 OpenRouter id 以研究報告＋OpenRouter 實查為準，查不到標缺欄。
+- **歸屬規則收緊（collect，取代收集策略第 6 點的三態規則）**：
+  1. 版本號精確比對：查詢模型名未在文中以精確版本出現（如文中是「Sonnet 4.5」
+     而查的是 Sonnet 4）→ 丟。
+  2. 只出現品牌字、無版本號（如僅「Gemini」）→ 不採計，丟。
+  3. 文中出現「家族＋版本」但該版本不在清單（如「Gemini 3.8」）→ 丟
+     （misattributed）。
+  4. alias map 需涵蓋暱稱（Fable／Mythos、Astra/Sol/Luna/Terra、Prime/Flash
+     後綴等），清單見研究報告 §6。
+- **舊池處置**：粒度與清單都已變，舊池 `2026-09-29.jsonl` 不清洗重用；搬至
+  `data/evidence/archive/`（不入 build glob），以新規則重新收集新池。
+
 ## 任務拆分
+
+### C9 — 清單 v2＋留言逐則評（2026-10-01 新增）
+- 依實作裁定 13、14：collect 改版（版本精確比對、品牌字丟、清單外丟、
+  Reddit/HN 每串前 10 則留言各自成 row）、`config/models.yaml` 換血、
+  舊池搬 archive、重收集新池後重跑 score＋build
+- **驗收**：新池每筆 evidence 的 url 可連回且文字精確提及該模型版本；
+  舊三模型不再出現、新 A/B 檔模型出現；pytest 全綠；validate 過；
+  重跑同輸入 votes 一致
 
 ### A1 — 專案骨架與 CLI
 - 建 `src/`、`tests/`、`data/`，CLI 入口支援 `fetch-models` / `collect` / `score` / `build` / `validate`
