@@ -69,12 +69,11 @@
 - `data/evidence/2026-10-01.jsonl`：**126 筆**（reddit 54／x 50／hn 23），
   每筆的 url 都可連回、text 都精確提及該 row 的模型版本
   （`.venv/bin/python tools/verify_pool.py data/evidence/2026-10-01.jsonl` 可複驗）。
-- `data/scores.json`：**仍是舊池的榜單**（8 席、含已移除的舊世代模型）。`arena score`
-  需要 OpenRouter API key，來源依序（2026-10-02 dotenv 鏈）：環境變數
-  `OPENROUTER_API_KEY`／`OPENROUTER_KEY` → 專案自己的 `.env`（已 gitignore）
-  → 中央金鑰檔（`ARENA_ENV_FILE` 指定，預設 `~/.keys/.env`）。
-  本專案的 `.env` 已指向中央金鑰檔。設定好後依序跑 `score` → `build` → `validate`
-  即換成 v2 榜單（聚合公式不動）。
+- `data/scores.json`：**v2 榜單已產出**（2026-10-02；15 席、judge=`llm-jury@557e1059`、
+  `sourcesCovered=[hn,reddit,x]`）。一筆＝一則留言、樣本小（2~25）＋K=10 收縮，
+  分數集中 43~60、`confidence` 低，呈現須帶樣本數與可信度；Gemini 2.5 Pro 第 2 名
+  是緬懷文小樣本效應。重跑指令：`arena score` → `arena build` → `arena validate`；
+  key 來源見下（dotenv 鏈，本專案 `.env` 已指向中央金鑰檔，已 gitignore）。
 
 ## 目錄結構
 

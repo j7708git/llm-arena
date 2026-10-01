@@ -150,15 +150,17 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
   `https://www.reddit.com/r/LocalLLaMA/comments/1wpkz0o/.../pbwxtw8/`
   （一句裡同時提 GLM 5.3 Flash 與 DeepSeek，但 DeepSeek 未帶版本號，屬非模型命中）。
 
-**score／build 待 key**（2026-10-01）：本環境無 `OPENROUTER_API_KEY`，故
-`arena score` 如實報錯不降級（`arena build` 隨後因全池未評分而拒絕更新
-`data/scores.json`，原檔保持不變）。**`data/scores.json` 目前仍是舊池的榜單**
-（8 席、含已移除的 Sonnet 4／GPT-5／DeepSeek V3.1，且 evidence 參照指向已搬進
-archive 的 `2026-09-29.jsonl`）——拿到 key 後依序跑 `arena score` → `arena build`
-→ `arena validate` 才會換成 v2 榜單。無 key 期間的替代驗證（`/tmp` 內、不動 repo
-資料）：以固定輸出的假評審（等價溫度 0）跑 `score_paths` 兩趟 → 第二趟全跳過、
-`--force` 重評逐字一致；再用該 votes 走 `build_document` → 產出通過 validate、
-15 席全部入榜（`sourcesCovered=[hn, reddit, x]`）。
+**score／build 已完成**（2026-10-02）：金鑰來源改 dotenv 鏈（環境變數 →
+專案 `.env`（已指向中央金鑰檔 `~/.keys/.env`）→ 中央金鑰檔），程式見
+`arena.jury.resolve_api_key`。`arena score` 已跑：126 則全數評分、0 次呼叫失敗
+（judge=`llm-jury@557e1059`），`arena build` 產出 v2 榜單並通過 `arena validate`
+（15 席、`sourcesCovered=[hn,reddit,x]`）。
+
+**v2 榜單的判讀注意**（給站方與後續 session）：現在一筆＝一則留言，樣本本來就小
+（2~25 筆），加上 K=10 收縮，分數集中在 43~60、`confidence` 普遍 0.0~0.34；
+多數模型有多個面向標「樣本不足」。**Gemini 2.5 Pro 名列第 2（n=7）是緬懷文
+小樣本效應，不是它真的比新模型強**——呈現務必帶樣本數與可信度。留言的情緒
+比主貼更批判（最高正面率僅 0.52），符合預期但要寫進網站文案的說明。
 
 ## 8. 快速上手指令
 

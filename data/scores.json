@@ -1,7 +1,7 @@
 {
   "meta": {
     "schemaVersion": 1.2,
-    "generatedAt": "2026-09-30T23:30:52Z",
+    "generatedAt": "2026-10-01T21:01:32Z",
     "windowDays": 30,
     "kind": "community-sentiment",
     "disclaimer": "社群聲量代理指標，非 benchmark",
@@ -50,497 +50,644 @@
   },
   "models": [
     {
-      "id": "anthropic/claude-sonnet-5.5",
-      "name": "Claude Sonnet 5.5",
+      "id": "anthropic/claude-opus-5.5",
+      "name": "Claude Opus 5.5",
       "provider": "Anthropic",
-      "score": 70.0,
+      "score": 60.5,
       "dimensions": {
-        "quality": 70.0,
-        "speed": 72.2,
-        "tokenEfficiency": 58.3,
-        "tokenUsage": 61.5,
-        "priceValue": 72.7
+        "quality": 62.1,
+        "speed": 54.5,
+        "tokenEfficiency": 50.0,
+        "tokenUsage": 53.8,
+        "priceValue": 66.7
       },
       "priceUsdPerMTok": {
-        "in": 2.0,
-        "out": 10.0
+        "in": 4.0,
+        "out": 20.0
       },
       "dimensionSamples": {
-        "quality": 10,
-        "speed": 8,
+        "quality": 19,
+        "speed": 1,
         "tokenEfficiency": 2,
         "tokenUsage": 3,
-        "priceValue": 12
+        "priceValue": 5
       },
       "sampleSize": 25,
-      "positiveRate": 0.48,
-      "confidence": 0.30031003928960015,
+      "positiveRate": 0.52,
+      "confidence": 0.3349821795314731,
       "mentionsBySource": {
-        "hn": 5,
+        "hn": 7,
         "reddit": 11,
-        "x": 9
-      },
-      "evidence": [
-        "evidence/2026-09-29.jsonl#l81",
-        "evidence/2026-09-29.jsonl#l82",
-        "evidence/2026-09-29.jsonl#l83",
-        "evidence/2026-09-29.jsonl#l84",
-        "evidence/2026-09-29.jsonl#l85",
-        "evidence/2026-09-29.jsonl#l86",
-        "evidence/2026-09-29.jsonl#l87",
-        "evidence/2026-09-29.jsonl#l88",
-        "evidence/2026-09-29.jsonl#l89",
-        "evidence/2026-09-29.jsonl#l90",
-        "evidence/2026-09-29.jsonl#l91",
-        "evidence/2026-09-29.jsonl#l92",
-        "evidence/2026-09-29.jsonl#l93",
-        "evidence/2026-09-29.jsonl#l94",
-        "evidence/2026-09-29.jsonl#l95",
-        "evidence/2026-09-29.jsonl#l96",
-        "evidence/2026-09-29.jsonl#l97",
-        "evidence/2026-09-29.jsonl#l98",
-        "evidence/2026-09-29.jsonl#l99",
-        "evidence/2026-09-29.jsonl#l100",
-        "evidence/2026-09-29.jsonl#l101",
-        "evidence/2026-09-29.jsonl#l102",
-        "evidence/2026-09-29.jsonl#l103",
-        "evidence/2026-09-29.jsonl#l104",
-        "evidence/2026-09-29.jsonl#l105"
-      ],
-      "updatedAt": "2026-09-30T23:30:52Z"
-    },
-    {
-      "id": "deepseek/deepseek-v3.1",
-      "name": "DeepSeek V3.1",
-      "provider": "DeepSeek",
-      "score": 65.3,
-      "dimensions": {
-        "quality": 73.7,
-        "speed": 61.5,
-        "tokenEfficiency": 58.3,
-        "tokenUsage": null,
-        "priceValue": 50.0
-      },
-      "priceUsdPerMTok": null,
-      "dimensionSamples": {
-        "quality": 9,
-        "speed": 3,
-        "tokenEfficiency": 2,
-        "tokenUsage": 0,
-        "priceValue": 4
-      },
-      "sampleSize": 23,
-      "positiveRate": 0.34782608695652173,
-      "confidence": 0.18811054636982238,
-      "mentionsBySource": {
-        "hn": 11,
-        "reddit": 7,
-        "x": 5
-      },
-      "evidence": [
-        "evidence/2026-09-29.jsonl#l130",
-        "evidence/2026-09-29.jsonl#l131",
-        "evidence/2026-09-29.jsonl#l132",
-        "evidence/2026-09-29.jsonl#l133",
-        "evidence/2026-09-29.jsonl#l134",
-        "evidence/2026-09-29.jsonl#l135",
-        "evidence/2026-09-29.jsonl#l136",
-        "evidence/2026-09-29.jsonl#l137",
-        "evidence/2026-09-29.jsonl#l138",
-        "evidence/2026-09-29.jsonl#l139",
-        "evidence/2026-09-29.jsonl#l140",
-        "evidence/2026-09-29.jsonl#l141",
-        "evidence/2026-09-29.jsonl#l142",
-        "evidence/2026-09-29.jsonl#l143",
-        "evidence/2026-09-29.jsonl#l144",
-        "evidence/2026-09-29.jsonl#l145",
-        "evidence/2026-09-29.jsonl#l146",
-        "evidence/2026-09-29.jsonl#l147",
-        "evidence/2026-09-29.jsonl#l148",
-        "evidence/2026-09-29.jsonl#l149",
-        "evidence/2026-09-29.jsonl#l150",
-        "evidence/2026-09-29.jsonl#l151",
-        "evidence/2026-09-29.jsonl#l152"
-      ],
-      "updatedAt": "2026-09-30T23:30:52Z"
-    },
-    {
-      "id": "openai/gpt-5",
-      "name": "GPT-5",
-      "provider": "OpenAI",
-      "score": 65.3,
-      "dimensions": {
-        "quality": 72.2,
-        "speed": 61.5,
-        "tokenEfficiency": 54.5,
-        "tokenUsage": 54.5,
-        "priceValue": 57.1
-      },
-      "priceUsdPerMTok": {
-        "in": 1.25,
-        "out": 10.0
-      },
-      "dimensionSamples": {
-        "quality": 8,
-        "speed": 3,
-        "tokenEfficiency": 1,
-        "tokenUsage": 1,
-        "priceValue": 4
-      },
-      "sampleSize": 30,
-      "positiveRate": 0.26666666666666666,
-      "confidence": 0.14182495553910618,
-      "mentionsBySource": {
-        "hn": 11,
-        "reddit": 12,
         "x": 7
       },
       "evidence": [
-        "evidence/2026-09-29.jsonl#l6",
-        "evidence/2026-09-29.jsonl#l7",
-        "evidence/2026-09-29.jsonl#l8",
-        "evidence/2026-09-29.jsonl#l9",
-        "evidence/2026-09-29.jsonl#l10",
-        "evidence/2026-09-29.jsonl#l11",
-        "evidence/2026-09-29.jsonl#l12",
-        "evidence/2026-09-29.jsonl#l13",
-        "evidence/2026-09-29.jsonl#l14",
-        "evidence/2026-09-29.jsonl#l42",
-        "evidence/2026-09-29.jsonl#l43",
-        "evidence/2026-09-29.jsonl#l44",
-        "evidence/2026-09-29.jsonl#l45",
-        "evidence/2026-09-29.jsonl#l46",
-        "evidence/2026-09-29.jsonl#l47",
-        "evidence/2026-09-29.jsonl#l48",
-        "evidence/2026-09-29.jsonl#l49",
-        "evidence/2026-09-29.jsonl#l50",
-        "evidence/2026-09-29.jsonl#l51",
-        "evidence/2026-09-29.jsonl#l52",
-        "evidence/2026-09-29.jsonl#l53",
-        "evidence/2026-09-29.jsonl#l54",
-        "evidence/2026-09-29.jsonl#l55",
-        "evidence/2026-09-29.jsonl#l56",
-        "evidence/2026-09-29.jsonl#l57",
-        "evidence/2026-09-29.jsonl#l58",
-        "evidence/2026-09-29.jsonl#l59",
-        "evidence/2026-09-29.jsonl#l106",
-        "evidence/2026-09-29.jsonl#l107",
-        "evidence/2026-09-29.jsonl#l108"
+        "evidence/2026-10-01.jsonl#l34",
+        "evidence/2026-10-01.jsonl#l35",
+        "evidence/2026-10-01.jsonl#l36",
+        "evidence/2026-10-01.jsonl#l37",
+        "evidence/2026-10-01.jsonl#l38",
+        "evidence/2026-10-01.jsonl#l39",
+        "evidence/2026-10-01.jsonl#l40",
+        "evidence/2026-10-01.jsonl#l41",
+        "evidence/2026-10-01.jsonl#l42",
+        "evidence/2026-10-01.jsonl#l43",
+        "evidence/2026-10-01.jsonl#l44",
+        "evidence/2026-10-01.jsonl#l45",
+        "evidence/2026-10-01.jsonl#l46",
+        "evidence/2026-10-01.jsonl#l47",
+        "evidence/2026-10-01.jsonl#l48",
+        "evidence/2026-10-01.jsonl#l49",
+        "evidence/2026-10-01.jsonl#l50",
+        "evidence/2026-10-01.jsonl#l51",
+        "evidence/2026-10-01.jsonl#l52",
+        "evidence/2026-10-01.jsonl#l53",
+        "evidence/2026-10-01.jsonl#l54",
+        "evidence/2026-10-01.jsonl#l55",
+        "evidence/2026-10-01.jsonl#l56",
+        "evidence/2026-10-01.jsonl#l57",
+        "evidence/2026-10-01.jsonl#l58"
       ],
-      "updatedAt": "2026-09-30T23:30:52Z"
-    },
-    {
-      "id": "anthropic/claude-sonnet-4",
-      "name": "Claude Sonnet 4",
-      "provider": "Anthropic",
-      "score": 60.2,
-      "dimensions": {
-        "quality": 66.7,
-        "speed": 54.5,
-        "tokenEfficiency": 45.5,
-        "tokenUsage": 45.5,
-        "priceValue": 57.1
-      },
-      "priceUsdPerMTok": {
-        "in": 3.0,
-        "out": 15.0
-      },
-      "dimensionSamples": {
-        "quality": 5,
-        "speed": 1,
-        "tokenEfficiency": 1,
-        "tokenUsage": 1,
-        "priceValue": 4
-      },
-      "sampleSize": 20,
-      "positiveRate": 0.3,
-      "confidence": 0.14547527396899385,
-      "mentionsBySource": {
-        "hn": 9,
-        "reddit": 9,
-        "x": 2
-      },
-      "evidence": [
-        "evidence/2026-09-29.jsonl#l1",
-        "evidence/2026-09-29.jsonl#l2",
-        "evidence/2026-09-29.jsonl#l3",
-        "evidence/2026-09-29.jsonl#l4",
-        "evidence/2026-09-29.jsonl#l5",
-        "evidence/2026-09-29.jsonl#l27",
-        "evidence/2026-09-29.jsonl#l28",
-        "evidence/2026-09-29.jsonl#l29",
-        "evidence/2026-09-29.jsonl#l30",
-        "evidence/2026-09-29.jsonl#l31",
-        "evidence/2026-09-29.jsonl#l32",
-        "evidence/2026-09-29.jsonl#l33",
-        "evidence/2026-09-29.jsonl#l34",
-        "evidence/2026-09-29.jsonl#l35",
-        "evidence/2026-09-29.jsonl#l36",
-        "evidence/2026-09-29.jsonl#l37",
-        "evidence/2026-09-29.jsonl#l38",
-        "evidence/2026-09-29.jsonl#l39",
-        "evidence/2026-09-29.jsonl#l40",
-        "evidence/2026-09-29.jsonl#l41"
-      ],
-      "updatedAt": "2026-09-30T23:30:52Z"
-    },
-    {
-      "id": "z-ai/glm-5.3-prime",
-      "name": "GLM 5.3 Prime",
-      "provider": "Z.AI",
-      "score": 58.4,
-      "dimensions": {
-        "quality": 57.1,
-        "speed": 66.7,
-        "tokenEfficiency": null,
-        "tokenUsage": null,
-        "priceValue": 53.3
-      },
-      "priceUsdPerMTok": {
-        "in": 2.8,
-        "out": 8.8
-      },
-      "dimensionSamples": {
-        "quality": 4,
-        "speed": 5,
-        "tokenEfficiency": 0,
-        "tokenUsage": 0,
-        "priceValue": 5
-      },
-      "sampleSize": 29,
-      "positiveRate": 0.1724137931034483,
-      "confidence": 0.07597745271479929,
-      "mentionsBySource": {
-        "hn": 11,
-        "reddit": 8,
-        "x": 10
-      },
-      "evidence": [
-        "evidence/2026-09-29.jsonl#l188",
-        "evidence/2026-09-29.jsonl#l189",
-        "evidence/2026-09-29.jsonl#l190",
-        "evidence/2026-09-29.jsonl#l191",
-        "evidence/2026-09-29.jsonl#l192",
-        "evidence/2026-09-29.jsonl#l193",
-        "evidence/2026-09-29.jsonl#l194",
-        "evidence/2026-09-29.jsonl#l195",
-        "evidence/2026-09-29.jsonl#l196",
-        "evidence/2026-09-29.jsonl#l197",
-        "evidence/2026-09-29.jsonl#l198",
-        "evidence/2026-09-29.jsonl#l199",
-        "evidence/2026-09-29.jsonl#l200",
-        "evidence/2026-09-29.jsonl#l201",
-        "evidence/2026-09-29.jsonl#l202",
-        "evidence/2026-09-29.jsonl#l203",
-        "evidence/2026-09-29.jsonl#l204",
-        "evidence/2026-09-29.jsonl#l205",
-        "evidence/2026-09-29.jsonl#l206",
-        "evidence/2026-09-29.jsonl#l207",
-        "evidence/2026-09-29.jsonl#l208",
-        "evidence/2026-09-29.jsonl#l209",
-        "evidence/2026-09-29.jsonl#l210",
-        "evidence/2026-09-29.jsonl#l211",
-        "evidence/2026-09-29.jsonl#l212",
-        "evidence/2026-09-29.jsonl#l213",
-        "evidence/2026-09-29.jsonl#l214",
-        "evidence/2026-09-29.jsonl#l215",
-        "evidence/2026-09-29.jsonl#l216"
-      ],
-      "updatedAt": "2026-09-30T23:30:52Z"
-    },
-    {
-      "id": "openai/gpt-6-sol",
-      "name": "GPT-6 Sol",
-      "provider": "OpenAI",
-      "score": 57.5,
-      "dimensions": {
-        "quality": 58.8,
-        "speed": null,
-        "tokenEfficiency": null,
-        "tokenUsage": 50.0,
-        "priceValue": 56.2
-      },
-      "priceUsdPerMTok": {
-        "in": 2.0,
-        "out": 10.0
-      },
-      "dimensionSamples": {
-        "quality": 7,
-        "speed": 0,
-        "tokenEfficiency": 0,
-        "tokenUsage": 2,
-        "priceValue": 6
-      },
-      "sampleSize": 21,
-      "positiveRate": 0.3333333333333333,
-      "confidence": 0.17194536432683688,
-      "mentionsBySource": {
-        "hn": 8,
-        "reddit": 10,
-        "x": 3
-      },
-      "evidence": [
-        "evidence/2026-09-29.jsonl#l109",
-        "evidence/2026-09-29.jsonl#l110",
-        "evidence/2026-09-29.jsonl#l111",
-        "evidence/2026-09-29.jsonl#l112",
-        "evidence/2026-09-29.jsonl#l113",
-        "evidence/2026-09-29.jsonl#l114",
-        "evidence/2026-09-29.jsonl#l115",
-        "evidence/2026-09-29.jsonl#l116",
-        "evidence/2026-09-29.jsonl#l117",
-        "evidence/2026-09-29.jsonl#l118",
-        "evidence/2026-09-29.jsonl#l119",
-        "evidence/2026-09-29.jsonl#l120",
-        "evidence/2026-09-29.jsonl#l121",
-        "evidence/2026-09-29.jsonl#l122",
-        "evidence/2026-09-29.jsonl#l123",
-        "evidence/2026-09-29.jsonl#l124",
-        "evidence/2026-09-29.jsonl#l125",
-        "evidence/2026-09-29.jsonl#l126",
-        "evidence/2026-09-29.jsonl#l127",
-        "evidence/2026-09-29.jsonl#l128",
-        "evidence/2026-09-29.jsonl#l129"
-      ],
-      "updatedAt": "2026-09-30T23:30:52Z"
+      "updatedAt": "2026-10-01T21:01:32Z"
     },
     {
       "id": "google/gemini-2.5-pro",
       "name": "Gemini 2.5 Pro",
       "provider": "Google",
-      "score": 56.2,
+      "score": 60.0,
       "dimensions": {
-        "quality": 61.5,
+        "quality": 60.0,
         "speed": null,
         "tokenEfficiency": null,
         "tokenUsage": null,
-        "priceValue": 42.9
+        "priceValue": null
       },
       "priceUsdPerMTok": {
         "in": 1.25,
         "out": 10.0
       },
       "dimensionSamples": {
-        "quality": 16,
+        "quality": 5,
         "speed": 0,
         "tokenEfficiency": 0,
         "tokenUsage": 0,
-        "priceValue": 4
+        "priceValue": 0
       },
-      "sampleSize": 33,
-      "positiveRate": 0.24242424242424243,
-      "confidence": 0.12831561346647294,
+      "sampleSize": 7,
+      "positiveRate": 0.5714285714285714,
+      "confidence": 0.2504542304090258,
       "mentionsBySource": {
-        "hn": 12,
-        "reddit": 14,
-        "x": 7
+        "reddit": 2,
+        "x": 5
       },
       "evidence": [
-        "evidence/2026-09-29.jsonl#l15",
-        "evidence/2026-09-29.jsonl#l16",
-        "evidence/2026-09-29.jsonl#l17",
-        "evidence/2026-09-29.jsonl#l18",
-        "evidence/2026-09-29.jsonl#l19",
-        "evidence/2026-09-29.jsonl#l20",
-        "evidence/2026-09-29.jsonl#l21",
-        "evidence/2026-09-29.jsonl#l22",
-        "evidence/2026-09-29.jsonl#l23",
-        "evidence/2026-09-29.jsonl#l24",
-        "evidence/2026-09-29.jsonl#l25",
-        "evidence/2026-09-29.jsonl#l26",
-        "evidence/2026-09-29.jsonl#l60",
-        "evidence/2026-09-29.jsonl#l61",
-        "evidence/2026-09-29.jsonl#l62",
-        "evidence/2026-09-29.jsonl#l63",
-        "evidence/2026-09-29.jsonl#l64",
-        "evidence/2026-09-29.jsonl#l65",
-        "evidence/2026-09-29.jsonl#l66",
-        "evidence/2026-09-29.jsonl#l67",
-        "evidence/2026-09-29.jsonl#l68",
-        "evidence/2026-09-29.jsonl#l69",
-        "evidence/2026-09-29.jsonl#l70",
-        "evidence/2026-09-29.jsonl#l71",
-        "evidence/2026-09-29.jsonl#l72",
-        "evidence/2026-09-29.jsonl#l73",
-        "evidence/2026-09-29.jsonl#l74",
-        "evidence/2026-09-29.jsonl#l75",
-        "evidence/2026-09-29.jsonl#l76",
-        "evidence/2026-09-29.jsonl#l77",
-        "evidence/2026-09-29.jsonl#l78",
-        "evidence/2026-09-29.jsonl#l79",
-        "evidence/2026-09-29.jsonl#l80"
+        "evidence/2026-10-01.jsonl#l14",
+        "evidence/2026-10-01.jsonl#l15",
+        "evidence/2026-10-01.jsonl#l16",
+        "evidence/2026-10-01.jsonl#l17",
+        "evidence/2026-10-01.jsonl#l18",
+        "evidence/2026-10-01.jsonl#l19",
+        "evidence/2026-10-01.jsonl#l20"
       ],
-      "updatedAt": "2026-09-30T23:30:52Z"
+      "updatedAt": "2026-10-01T21:01:32Z"
     },
     {
-      "id": "x-ai/grok-4.7",
-      "name": "Grok 4.7",
-      "provider": "xAI",
-      "score": 47.3,
+      "id": "openai/gpt-6-astra",
+      "name": "GPT-6 Astra",
+      "provider": "OpenAI",
+      "score": 59.5,
       "dimensions": {
-        "quality": 45.5,
-        "speed": 46.2,
+        "quality": 61.5,
+        "speed": 54.5,
         "tokenEfficiency": null,
-        "tokenUsage": 45.5,
-        "priceValue": 53.3
+        "tokenUsage": null,
+        "priceValue": null
+      },
+      "priceUsdPerMTok": {
+        "in": 10.0,
+        "out": 50.0
+      },
+      "dimensionSamples": {
+        "quality": 3,
+        "speed": 1,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 0
+      },
+      "sampleSize": 8,
+      "positiveRate": 0.5,
+      "confidence": 0.2152125268244419,
+      "mentionsBySource": {
+        "hn": 2,
+        "x": 6
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l61",
+        "evidence/2026-10-01.jsonl#l62",
+        "evidence/2026-10-01.jsonl#l63",
+        "evidence/2026-10-01.jsonl#l64",
+        "evidence/2026-10-01.jsonl#l65",
+        "evidence/2026-10-01.jsonl#l66",
+        "evidence/2026-10-01.jsonl#l67",
+        "evidence/2026-10-01.jsonl#l68"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "qwen/qwen3.8-max-0902",
+      "name": "Qwen3.8 Max",
+      "provider": "Alibaba",
+      "score": 58.3,
+      "dimensions": {
+        "quality": null,
+        "speed": 58.3,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": null
       },
       "priceUsdPerMTok": {
         "in": 2.0,
         "out": 6.0
       },
       "dimensionSamples": {
-        "quality": 12,
-        "speed": 3,
+        "quality": 0,
+        "speed": 2,
         "tokenEfficiency": 0,
-        "tokenUsage": 1,
-        "priceValue": 5
+        "tokenUsage": 0,
+        "priceValue": 0
       },
-      "sampleSize": 35,
-      "positiveRate": 0.11428571428571428,
-      "confidence": 0.0453510585448975,
+      "sampleSize": 3,
+      "positiveRate": 0.3333333333333333,
+      "confidence": 0.061490315276160515,
       "mentionsBySource": {
-        "hn": 12,
-        "reddit": 11,
-        "x": 12
+        "reddit": 3
       },
       "evidence": [
-        "evidence/2026-09-29.jsonl#l153",
-        "evidence/2026-09-29.jsonl#l154",
-        "evidence/2026-09-29.jsonl#l155",
-        "evidence/2026-09-29.jsonl#l156",
-        "evidence/2026-09-29.jsonl#l157",
-        "evidence/2026-09-29.jsonl#l158",
-        "evidence/2026-09-29.jsonl#l159",
-        "evidence/2026-09-29.jsonl#l160",
-        "evidence/2026-09-29.jsonl#l161",
-        "evidence/2026-09-29.jsonl#l162",
-        "evidence/2026-09-29.jsonl#l163",
-        "evidence/2026-09-29.jsonl#l164",
-        "evidence/2026-09-29.jsonl#l165",
-        "evidence/2026-09-29.jsonl#l166",
-        "evidence/2026-09-29.jsonl#l167",
-        "evidence/2026-09-29.jsonl#l168",
-        "evidence/2026-09-29.jsonl#l169",
-        "evidence/2026-09-29.jsonl#l170",
-        "evidence/2026-09-29.jsonl#l171",
-        "evidence/2026-09-29.jsonl#l172",
-        "evidence/2026-09-29.jsonl#l173",
-        "evidence/2026-09-29.jsonl#l174",
-        "evidence/2026-09-29.jsonl#l175",
-        "evidence/2026-09-29.jsonl#l176",
-        "evidence/2026-09-29.jsonl#l177",
-        "evidence/2026-09-29.jsonl#l178",
-        "evidence/2026-09-29.jsonl#l179",
-        "evidence/2026-09-29.jsonl#l180",
-        "evidence/2026-09-29.jsonl#l181",
-        "evidence/2026-09-29.jsonl#l182",
-        "evidence/2026-09-29.jsonl#l183",
-        "evidence/2026-09-29.jsonl#l184",
-        "evidence/2026-09-29.jsonl#l185",
-        "evidence/2026-09-29.jsonl#l186",
-        "evidence/2026-09-29.jsonl#l187"
+        "evidence/2026-10-01.jsonl#l94",
+        "evidence/2026-10-01.jsonl#l95",
+        "evidence/2026-10-01.jsonl#l96"
       ],
-      "updatedAt": "2026-09-30T23:30:52Z"
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "anthropic/claude-sonnet-5",
+      "name": "Claude Sonnet 5",
+      "provider": "Anthropic",
+      "score": 57.2,
+      "dimensions": {
+        "quality": 58.3,
+        "speed": null,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": 54.5
+      },
+      "priceUsdPerMTok": {
+        "in": 2.0,
+        "out": 10.0
+      },
+      "dimensionSamples": {
+        "quality": 2,
+        "speed": 0,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 1
+      },
+      "sampleSize": 2,
+      "positiveRate": 1.0,
+      "confidence": 0.3423719528896193,
+      "mentionsBySource": {
+        "reddit": 1,
+        "x": 1
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l59",
+        "evidence/2026-10-01.jsonl#l60"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "z-ai/glm-5.3-flash",
+      "name": "GLM 5.3 Flash",
+      "provider": "Z.AI",
+      "score": 55.8,
+      "dimensions": {
+        "quality": 57.1,
+        "speed": 46.7,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": 61.5
+      },
+      "priceUsdPerMTok": {
+        "in": 0.15,
+        "out": 0.5
+      },
+      "dimensionSamples": {
+        "quality": 4,
+        "speed": 5,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 3
+      },
+      "sampleSize": 16,
+      "positiveRate": 0.375,
+      "confidence": 0.18480982554752803,
+      "mentionsBySource": {
+        "hn": 3,
+        "reddit": 8,
+        "x": 5
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l69",
+        "evidence/2026-10-01.jsonl#l70",
+        "evidence/2026-10-01.jsonl#l71",
+        "evidence/2026-10-01.jsonl#l72",
+        "evidence/2026-10-01.jsonl#l73",
+        "evidence/2026-10-01.jsonl#l74",
+        "evidence/2026-10-01.jsonl#l75",
+        "evidence/2026-10-01.jsonl#l76",
+        "evidence/2026-10-01.jsonl#l77",
+        "evidence/2026-10-01.jsonl#l78",
+        "evidence/2026-10-01.jsonl#l79",
+        "evidence/2026-10-01.jsonl#l80",
+        "evidence/2026-10-01.jsonl#l81",
+        "evidence/2026-10-01.jsonl#l82",
+        "evidence/2026-10-01.jsonl#l83",
+        "evidence/2026-10-01.jsonl#l84"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "openai/gpt-5.6-luna",
+      "name": "GPT-5.6 Luna",
+      "provider": "OpenAI",
+      "score": 52.0,
+      "dimensions": {
+        "quality": 50.0,
+        "speed": null,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": 57.1
+      },
+      "priceUsdPerMTok": {
+        "in": 0.19999999999999998,
+        "out": 1.2
+      },
+      "dimensionSamples": {
+        "quality": 4,
+        "speed": 0,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 4
+      },
+      "sampleSize": 7,
+      "positiveRate": 0.14285714285714285,
+      "confidence": 0.02567895594897479,
+      "mentionsBySource": {
+        "hn": 1,
+        "reddit": 2,
+        "x": 4
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l120",
+        "evidence/2026-10-01.jsonl#l121",
+        "evidence/2026-10-01.jsonl#l122",
+        "evidence/2026-10-01.jsonl#l123",
+        "evidence/2026-10-01.jsonl#l124",
+        "evidence/2026-10-01.jsonl#l125",
+        "evidence/2026-10-01.jsonl#l126"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "anthropic/claude-sonnet-5.5",
+      "name": "Claude Sonnet 5.5",
+      "provider": "Anthropic",
+      "score": 51.7,
+      "dimensions": {
+        "quality": 50.0,
+        "speed": 54.5,
+        "tokenEfficiency": 54.5,
+        "tokenUsage": 46.2,
+        "priceValue": 53.8
+      },
+      "priceUsdPerMTok": {
+        "in": 2.0,
+        "out": 10.0
+      },
+      "dimensionSamples": {
+        "quality": 2,
+        "speed": 1,
+        "tokenEfficiency": 1,
+        "tokenUsage": 3,
+        "priceValue": 3
+      },
+      "sampleSize": 9,
+      "positiveRate": 0.3333333333333333,
+      "confidence": 0.12058159868274292,
+      "mentionsBySource": {
+        "hn": 1,
+        "reddit": 3,
+        "x": 5
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l1",
+        "evidence/2026-10-01.jsonl#l2",
+        "evidence/2026-10-01.jsonl#l3",
+        "evidence/2026-10-01.jsonl#l4",
+        "evidence/2026-10-01.jsonl#l5",
+        "evidence/2026-10-01.jsonl#l6",
+        "evidence/2026-10-01.jsonl#l7",
+        "evidence/2026-10-01.jsonl#l8",
+        "evidence/2026-10-01.jsonl#l9"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "moonshotai/kimi-k3",
+      "name": "Kimi K3",
+      "provider": "Moonshot",
+      "score": 51.5,
+      "dimensions": {
+        "quality": 57.1,
+        "speed": 46.2,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": 42.9
+      },
+      "priceUsdPerMTok": {
+        "in": 0.7009000000000001,
+        "out": 10.0
+      },
+      "dimensionSamples": {
+        "quality": 4,
+        "speed": 3,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 4
+      },
+      "sampleSize": 13,
+      "positiveRate": 0.23076923076923078,
+      "confidence": 0.08179379092465712,
+      "mentionsBySource": {
+        "hn": 3,
+        "reddit": 5,
+        "x": 5
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l105",
+        "evidence/2026-10-01.jsonl#l106",
+        "evidence/2026-10-01.jsonl#l107",
+        "evidence/2026-10-01.jsonl#l108",
+        "evidence/2026-10-01.jsonl#l109",
+        "evidence/2026-10-01.jsonl#l110",
+        "evidence/2026-10-01.jsonl#l111",
+        "evidence/2026-10-01.jsonl#l112",
+        "evidence/2026-10-01.jsonl#l113",
+        "evidence/2026-10-01.jsonl#l114",
+        "evidence/2026-10-01.jsonl#l115",
+        "evidence/2026-10-01.jsonl#l116",
+        "evidence/2026-10-01.jsonl#l117"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "z-ai/glm-5.3-prime",
+      "name": "GLM 5.3 Prime",
+      "provider": "Z.AI",
+      "score": 50.0,
+      "dimensions": {
+        "quality": null,
+        "speed": null,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": null
+      },
+      "priceUsdPerMTok": {
+        "in": 2.8,
+        "out": 8.8
+      },
+      "dimensionSamples": {
+        "quality": 0,
+        "speed": 0,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 0
+      },
+      "sampleSize": 4,
+      "positiveRate": 0.0,
+      "confidence": 0.0,
+      "mentionsBySource": {
+        "x": 4
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l30",
+        "evidence/2026-10-01.jsonl#l31",
+        "evidence/2026-10-01.jsonl#l32",
+        "evidence/2026-10-01.jsonl#l33"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "anthropic/claude-opus-5",
+      "name": "Claude Opus 5",
+      "provider": "Anthropic",
+      "score": 47.1,
+      "dimensions": {
+        "quality": 42.9,
+        "speed": null,
+        "tokenEfficiency": 46.2,
+        "tokenUsage": 45.5,
+        "priceValue": 58.3
+      },
+      "priceUsdPerMTok": {
+        "in": 5.0,
+        "out": 25.0
+      },
+      "dimensionSamples": {
+        "quality": 4,
+        "speed": 0,
+        "tokenEfficiency": 3,
+        "tokenUsage": 1,
+        "priceValue": 2
+      },
+      "sampleSize": 8,
+      "positiveRate": 0.375,
+      "confidence": 0.13684175946152105,
+      "mentionsBySource": {
+        "hn": 2,
+        "reddit": 6
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l97",
+        "evidence/2026-10-01.jsonl#l98",
+        "evidence/2026-10-01.jsonl#l99",
+        "evidence/2026-10-01.jsonl#l100",
+        "evidence/2026-10-01.jsonl#l101",
+        "evidence/2026-10-01.jsonl#l102",
+        "evidence/2026-10-01.jsonl#l103",
+        "evidence/2026-10-01.jsonl#l104"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "x-ai/grok-4.7",
+      "name": "Grok 4.7",
+      "provider": "xAI",
+      "score": 46.9,
+      "dimensions": {
+        "quality": 43.8,
+        "speed": null,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": 54.5
+      },
+      "priceUsdPerMTok": {
+        "in": 2.0,
+        "out": 6.0
+      },
+      "dimensionSamples": {
+        "quality": 6,
+        "speed": 0,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 1
+      },
+      "sampleSize": 9,
+      "positiveRate": 0.3333333333333333,
+      "confidence": 0.12058159868274292,
+      "mentionsBySource": {
+        "hn": 1,
+        "reddit": 5,
+        "x": 3
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l21",
+        "evidence/2026-10-01.jsonl#l22",
+        "evidence/2026-10-01.jsonl#l23",
+        "evidence/2026-10-01.jsonl#l24",
+        "evidence/2026-10-01.jsonl#l25",
+        "evidence/2026-10-01.jsonl#l26",
+        "evidence/2026-10-01.jsonl#l27",
+        "evidence/2026-10-01.jsonl#l28",
+        "evidence/2026-10-01.jsonl#l29"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "openai/gpt-6-sol",
+      "name": "GPT-6 Sol",
+      "provider": "OpenAI",
+      "score": 46.4,
+      "dimensions": {
+        "quality": 45.5,
+        "speed": 45.5,
+        "tokenEfficiency": 45.5,
+        "tokenUsage": 45.5,
+        "priceValue": 50.0
+      },
+      "priceUsdPerMTok": {
+        "in": 2.0,
+        "out": 10.0
+      },
+      "dimensionSamples": {
+        "quality": 1,
+        "speed": 1,
+        "tokenEfficiency": 1,
+        "tokenUsage": 1,
+        "priceValue": 2
+      },
+      "sampleSize": 4,
+      "positiveRate": 0.0,
+      "confidence": 0.0,
+      "mentionsBySource": {
+        "reddit": 3,
+        "x": 1
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l10",
+        "evidence/2026-10-01.jsonl#l11",
+        "evidence/2026-10-01.jsonl#l12",
+        "evidence/2026-10-01.jsonl#l13"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "anthropic/claude-fable-5.1",
+      "name": "Claude Fable 5.1",
+      "provider": "Anthropic",
+      "score": 45.5,
+      "dimensions": {
+        "quality": null,
+        "speed": null,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": 45.5
+      },
+      "priceUsdPerMTok": {
+        "in": 10.0,
+        "out": 50.0
+      },
+      "dimensionSamples": {
+        "quality": 0,
+        "speed": 0,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 1
+      },
+      "sampleSize": 2,
+      "positiveRate": 0.0,
+      "confidence": 0.0,
+      "mentionsBySource": {
+        "reddit": 2
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l118",
+        "evidence/2026-10-01.jsonl#l119"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
+    },
+    {
+      "id": "deepseek/deepseek-v4.1-flash",
+      "name": "DeepSeek V4.1 Flash",
+      "provider": "DeepSeek",
+      "score": 43.1,
+      "dimensions": {
+        "quality": 35.7,
+        "speed": 54.5,
+        "tokenEfficiency": null,
+        "tokenUsage": null,
+        "priceValue": 50.0
+      },
+      "priceUsdPerMTok": {
+        "in": 0.03,
+        "out": 0.5
+      },
+      "dimensionSamples": {
+        "quality": 4,
+        "speed": 1,
+        "tokenEfficiency": 0,
+        "tokenUsage": 0,
+        "priceValue": 4
+      },
+      "sampleSize": 9,
+      "positiveRate": 0.1111111111111111,
+      "confidence": 0.019890371327130518,
+      "mentionsBySource": {
+        "hn": 3,
+        "reddit": 3,
+        "x": 3
+      },
+      "evidence": [
+        "evidence/2026-10-01.jsonl#l85",
+        "evidence/2026-10-01.jsonl#l86",
+        "evidence/2026-10-01.jsonl#l87",
+        "evidence/2026-10-01.jsonl#l88",
+        "evidence/2026-10-01.jsonl#l89",
+        "evidence/2026-10-01.jsonl#l90",
+        "evidence/2026-10-01.jsonl#l91",
+        "evidence/2026-10-01.jsonl#l92",
+        "evidence/2026-10-01.jsonl#l93"
+      ],
+      "updatedAt": "2026-10-01T21:01:32Z"
     }
   ]
 }
