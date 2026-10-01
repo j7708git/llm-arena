@@ -82,7 +82,8 @@
   每筆的 url 都可連回（`tools/verify_pool.py` 可複驗）。
 - `data/scores.json`：**v3 榜單已產出**（2026-10-02；15 席、judge=`llm-jury@557e1059`、
   `sourcesCovered=[hn,reddit,x]`、`schemaVersion` 仍 1.2）。樣本數 2~311，
-  `positiveRate` 0.16~0.31，K=10 收縮後分數集中 40~60、`confidence` 0.00~0.34。
+  **正面率 0.32~0.64、`confidence` 0.19~0.46**（分母為有表態留言數，見裁定 16；
+  全池 1455 則中僅約 56% 有表態）；K=10 收縮後分數集中 40~60。
   **呈現務必帶樣本數與可信度**；低樣本席（Claude Sonnet 5 n=2、GLM 5.3 Prime n=4、
   Gemini 2.5 Pro n=16、Qwen3.8 Max n=22）的名次是小樣本效應。
   重跑指令：`arena score` → `arena build` → `arena validate`；
@@ -215,7 +216,9 @@ neutral，五個面向用 positive／negative／`not-discussed`）：
 `models[].dimensions` 是開放 map，**鍵必須恰好等於 `meta.dimensions` 的 id 集合**
 （`validate` 會交叉檢查）。某一面向完全沒有正負表態時，該維度是 **`null`**＝
 **「資料不足」**，站方必須顯示為資料不足，**不得顯示成 50**。`meta.weights` 是總分權重，
-`priceUsdPerMTok` 在 model 層級（查無定價為 `null`），另有 `dimensionSamples` 記錄各面向樣本數。
+`priceUsdPerMTok` 在 model 層級（查無定價為 `null`），另有 `dimensionSamples` 記錄
+各面向樣本數——**`dimensionSamples.overall` 是 overall 的「有表態」筆數（P+N，
+neutral 不計）**，即 `positiveRate`／`confidence` 的分母（裁定 16）。
 
 也可以不啟用虛擬環境，直接用 `python -m arena` 執行（需先安裝專案）。
 
@@ -366,6 +369,10 @@ Reddit 的 keyless 路徑會限流；連續抓多個模型時請保留 `--sleep`
 - 總分 `score`＝非 null 面向的加權平均（權重 `meta.weights`，剔除 null 後**重歸一**），
   以四捨五入後的面向分數計算，讓榜上數字可手算回推。
 - 模型層 `confidence`＝overall 正面率的 **Wilson 95% 下界**（z=1.96）。
+- **`positiveRate`／`confidence` 的分母是「有表態」的留言**（正面＋負面，
+  `dimensionSamples.overall`）；`neutral`（含離題、純語助詞、問問題）不進分母
+  （裁定 16）。呈現正面率時務必說明「在有表態者中」。全部 neutral 的模型
+  （P+N=0）呈現為樣本不足，`positiveRate=0.0` **不代表全數不滿**。
 - `sampleSize = 0` 的模型**不入榜**，並列在 `meta.notes` 交代排除清單。
 - `evidence` 參照列出該模型**全部**的列（含未評分者），格式 `evidence/<檔名>#l<行號>`。
 
@@ -437,7 +444,11 @@ export OPENROUTER_API_KEY=sk-or-...
 - **樣本數不等於人氣**：搜尋引擎每次查詢有回傳上限（每來源 `per_stream_limit=12`、
   `pool_limit=40`），各模型筆數趨於平均是截斷造成的假象。榜單呈現須以「社群聲量
   代理指標」定位，不要把 `sampleSize` 當成熱門度條。
-- 現在一筆＝**一則留言／推文**，單一模型樣本量小（2~25）＋K=10 收縮，分數會集中在
-  50 附近；呈現務必帶樣本數與 `confidence`，並把「樣本不足」的面向照實標示。
+- 現在一筆＝**一則留言／推文**，多數模型樣本量仍偏小（2~311）＋K=10 收縮，分數會
+  集中在 50 附近；呈現務必帶樣本數與 `confidence`，並把「樣本不足」的面向照實標示。
+- **正面率是「有表態者中的比例」**（裁定 16）：留言近半數是離題／無立場（neutral），
+  那些不進分母。呈現時要說明，否則使用者會把 0.5 誤讀成「一半的人沒意見」。
+- **歸屬可能繼承主貼**（82% 的留言如此）：留言本身沒寫模型名，是依主貼標題歸屬；
+  呈現「逐則引用」時建議一併顯示主貼標題（`thread.title`）與連結，讓查核者知道上下文。
 - 不要讓模型直接「打一個分數」，分數必須可由公式重算。
 - 現在**不需要資料庫**：原始證據與分數都以檔案進 git，有 commit history 可追溯。

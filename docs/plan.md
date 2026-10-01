@@ -246,6 +246,26 @@
    Algolia 以標題回查 `news.ycombinator.com/item?id=...`（與 C2 補 author 同一套
    查法，快取共用不重複打 API）；查不到就沿用原 url，不讓整串失敗。
 
+## 實作裁定 16 — 正面率分母剔除中立（2026-10-02 owner 裁定）
+
+**問題**：留言逐則後，多數留言是離題／無立場（問規格、貼圖、語助詞），評審判為
+`neutral`。原公式 `positiveRate = 正面／sampleSize` 把這些算進分母，使榜單顯示的
+「正面率」僅 0.16~0.31，與事實不符——把「沒表態」當成「不正面」。
+
+**裁定**：
+
+1. `positiveRate` ＝ **正面／（正面＋負面）**：只算有表態的留言；`neutral` 不進分母。
+2. `confidence`（Wilson 95% 下界）同樣以「有表態數」為 n。
+3. **分母要看得見**：`dimensionSamples.overall` ＝ 有表態筆數（P+N）。站方可顯示
+   「N 則留言中 M 則有表態」；`sampleSize` 語意不變（該模型全部 evidence 筆數）。
+4. 五個面向不受影響（`not-discussed` 本來就排除在 n 之外）；**總分公式不變**。
+5. `scores.json` 的 `schemaVersion` 維持 `1.2`（欄位未增減，僅 `positiveRate`／
+   `confidence` 語意更精確）——但這是**語意變更**，jason-lab 接新資料時必須同步
+   文案（正面率＝有表態者中的比例），見 `README.md` 注意事項。
+6. 若模型完全沒有表態（P+N=0，如 `GLM 5.3 Prime` 的 4 筆全 neutral）：
+   `positiveRate=0.0`、`confidence=0.0`、`dimensionSamples.overall=0`，
+   站方應以「樣本不足」呈現，不得解讀為「全數不滿」。
+
 ## 任務拆分
 
 ### C9 — 清單 v2＋留言逐則評（2026-10-01 新增）

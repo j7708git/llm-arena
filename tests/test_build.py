@@ -160,9 +160,11 @@ def test_aggregation_pn_null_and_samples(tmp_path: Path) -> None:
         assert entry["dimensions"][facet] is None
         assert entry["dimensionSamples"][facet] == 0
     assert entry["sampleSize"] == 3
-    # overall：1 個 positive、2 個 neutral/negative → 正面率 1/3。
-    assert entry["positiveRate"] == pytest.approx(1 / 3)
-    assert entry["confidence"] == pytest.approx(wilson_lower_bound(1, 3))
+    # overall：1 positive、1 negative、1 neutral → 分母只算有表態者（裁定 16）：
+    # 正面率 1/2、信心用 wilson(1, 2)、dimensionSamples.overall＝2。
+    assert entry["positiveRate"] == pytest.approx(0.5)
+    assert entry["confidence"] == pytest.approx(wilson_lower_bound(1, 2))
+    assert entry["dimensionSamples"]["overall"] == 2
     assert entry["mentionsBySource"] == {"hn": 1, "reddit": 2}
     assert entry["id"] == "m/a" and entry["name"] == "Name m/a"
     assert entry["priceUsdPerMTok"] == {"in": 1.0, "out": 2.0}
@@ -213,6 +215,25 @@ def test_k_shrinkage_n10_all_positive_is_75(tmp_path: Path) -> None:
     # 只有 quality 有資料 → 總分就是 quality 分數。
     assert entry["score"] == 75.0
     assert entry["positiveRate"] == 1.0
+    assert entry["dimensionSamples"]["overall"] == 10  # 全為 positive（有表態）
+
+
+def test_positive_rate_excludes_neutral_only_rows(tmp_path: Path) -> None:
+    """全部 neutral（離題／無立場）→ 分母 0：正面率 0、信心 0（裁定 16）。"""
+    path = _write(
+        tmp_path / "e.jsonl",
+        [
+            _record("m/a", votes=_votes("neutral", quality="positive")),
+            _record("m/a", votes=_votes("neutral", quality="negative")),
+        ],
+    )
+    document, _, _ = build_document(build._load_rows([path]), _models("m/a"))
+    entry = _entry(document, "m/a")
+
+    assert entry["sampleSize"] == 2
+    assert entry["dimensionSamples"]["overall"] == 0
+    assert entry["positiveRate"] == 0.0
+    assert entry["confidence"] == 0.0
 
 
 # --- 未評分、零樣本、judge 不符 ---------------------------------------------

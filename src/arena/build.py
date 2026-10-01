@@ -246,6 +246,7 @@ def _aggregate(
     facet_positive = {facet: 0 for facet in FACET_DIMENSION_IDS}
     facet_negative = {facet: 0 for facet in FACET_DIMENSION_IDS}
     overall_positive = 0
+    overall_negative = 0
     mentions: dict[str, int] = {}
 
     for row in counted:
@@ -258,8 +259,11 @@ def _aggregate(
                 facet_positive[facet] += 1
             elif label == "negative":
                 facet_negative[facet] += 1
-        if votes[OVERALL_VOTE_ID].get("label") == "positive":
+        overall_label = votes[OVERALL_VOTE_ID].get("label")
+        if overall_label == "positive":
             overall_positive += 1
+        elif overall_label == "negative":
+            overall_negative += 1
 
     dimensions = {
         facet: dimension_score(facet_positive[facet], facet_negative[facet])
@@ -269,6 +273,10 @@ def _aggregate(
         facet: facet_positive[facet] + facet_negative[facet]
         for facet in FACET_DIMENSION_IDS
     }
+    # overall 的「有表態」樣本數（P+N，neutral 不計）：新池多數留言是離題／
+    # 無立場（判定為 neutral），若計入分母會把正面率壓到失真（裁定 16）。
+    overall_discussed = overall_positive + overall_negative
+    dimension_samples[OVERALL_VOTE_ID] = overall_discussed
 
     entry = models_index.get(model_id, {})
     name = entry.get("name") or model_id
@@ -284,8 +292,10 @@ def _aggregate(
         "priceUsdPerMTok": price,
         "dimensionSamples": dimension_samples,
         "sampleSize": sample_size,
-        "positiveRate": (overall_positive / sample_size) if sample_size else 0.0,
-        "confidence": wilson_lower_bound(overall_positive, sample_size),
+        # 正面率＝正面／（正面＋負面）：只算「有表態」的留言，neutral（含離題、
+        # 純語助詞、問問題）不進分母。分母（有表態筆數）見 dimensionSamples.overall。
+        "positiveRate": (overall_positive / overall_discussed) if overall_discussed else 0.0,
+        "confidence": wilson_lower_bound(overall_positive, overall_discussed),
         # 計數與 sampleSize 同一組（已評分的列）；evidence 參照則含全部列。
         "mentionsBySource": dict(sorted(mentions.items())),
         "evidence": [row.ref for row in rows],

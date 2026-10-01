@@ -244,10 +244,11 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
    evidence 形狀（126+59 筆無 `thread`、其餘有），validate 兩種都收。
 4. **「繼承」會帶進大量無立場留言**：這是裁定 15 的必然結果——純 jokes 與「+1」也會
    繼承該串（例如上面那個「got mogged by claude opus」串的 20 則留言幾乎全是
-   吐槽）。評審會把它們判成 neutral／not-discussed，等於稀釋 positiveRate。
+   吐槽）。評審會把它們判成 neutral／not-discussed。
    **實測**：繼承列的 overall 有 **704/1195（58.9%）是 neutral**，自身提及列只有
-   98/240（40.8%）。站方文案必須說明「一則留言＝一則社群留言，歸屬可能繼承主貼」，
-   不可讓讀者誤以為每一則留言都在明確評價該模型。
+   98/240（40.8%）。**已由裁定 16 處理**：neutral 不再進 `positiveRate` 分母，
+   並以 `dimensionSamples.overall` 揭露有表態筆數；站方文案仍須說明
+   「一則留言＝一則社群留言，歸屬可能繼承主貼」。
 
 **驗收結果**（2026-10-02）：
 
@@ -259,13 +260,15 @@ laya n=110 preview：choice_accuracy 0.4424 FAIL／ECE 0.1342 FAIL／信心與�
 | `thread.url` | Reddit 916 筆皆為 `…/comments/…` 主貼；HN 354 筆**全部**由 Algolia 回查成 `news.ycombinator.com/item?id=…` ✅；**95 個不重複主貼全數連線 2xx/3xx** ✅ |
 | `arena validate` | `data/scores.json` ＋ `data/evidence/*.jsonl` 回 **0** ✅ |
 | `arena score` | 1329 則全數評分、**0 次呼叫失敗**（judge=`llm-jury@557e1059`）、無效面向回覆 50 個（不影響該列其它面向） |
-| `arena build` | 15 席全入榜；分數 40.7~59.6、`confidence` 0.00~0.34、`positiveRate` 0.16~0.31 |
+| `arena build` | 15 席全入榜；分數 40.7~59.6；`positiveRate`／`confidence` 於裁定 16 修正後為 **0.32~0.64／0.19~0.46**（分母＝有表態筆數，見 `dimensionSamples.overall`） |
 | 重跑一致性 | 抽 12 則以同評審重評**兩輪**：144 格中 2 格不一致（1.4%）。唯一不一致的列是語意模糊的吐槽句（"All that effort for such a boring message…"），單獨重試 4 次得 neutral×2／negative×2 → **評審端本身非位元確定**（上游 provider），非管線邏輯問題。其餘 11 列逐格一致 ✅ |
 | 人工抽核 | `verify_pool.py --sample 20 --seed 20261002`，20 筆 url 全 200；**14 筆情緒明確指向該模型**、6 筆合規但屬無立場／離題（純 gif、純語助詞、或談同串的**裸暱稱** sibling——裸暱稱不綁世代故不算提及，繼承該串）。全部符合裁定 15 五條優先序，無違例 |
 
 **v3 榜單的判讀注意**（給站方）：樣本數分布極不平均（Sonnet 5 n=2、Prime n=4、
 Gemini 2.5 Pro n=16 ↔ GPT-6 Astra n=311），名次幾乎由**樣本數**決定。
-`confidence` 最高只有 0.34。低樣本席（n<20）務必標「僅供參考」。
+`positiveRate`／`confidence` 已按裁定 16 改為「有表態者中」計算：現在
+**正面率 0.32~0.64、`confidence` 0.19~0.46**；`GLM 5.3 Prime`（4 筆全 neutral）
+`positiveRate=0.0` 是**樣本不足**、不是全數不滿。低樣本席（n<20）務必標「僅供參考」。
 
 ## 9. 快速上手指令
 

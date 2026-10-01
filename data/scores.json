@@ -1,7 +1,7 @@
 {
   "meta": {
     "schemaVersion": 1.2,
-    "generatedAt": "2026-10-01T22:54:03Z",
+    "generatedAt": "2026-10-01T23:12:04Z",
     "windowDays": 30,
     "kind": "community-sentiment",
     "disclaimer": "社群聲量代理指標，非 benchmark",
@@ -70,11 +70,12 @@
         "speed": 13,
         "tokenEfficiency": 5,
         "tokenUsage": 9,
-        "priceValue": 19
+        "priceValue": 19,
+        "overall": 61
       },
       "sampleSize": 148,
-      "positiveRate": 0.23648648648648649,
-      "confidence": 0.1752369688407319,
+      "positiveRate": 0.5737704918032787,
+      "confidence": 0.44895006843512514,
       "mentionsBySource": {
         "hn": 50,
         "reddit": 90,
@@ -230,7 +231,7 @@
         "evidence/2026-10-01.jsonl#l1153",
         "evidence/2026-10-01.jsonl#l1154"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "qwen/qwen3.8-max-0902",
@@ -253,11 +254,12 @@
         "speed": 2,
         "tokenEfficiency": 0,
         "tokenUsage": 1,
-        "priceValue": 2
+        "priceValue": 2,
+        "overall": 6
       },
       "sampleSize": 22,
-      "positiveRate": 0.2727272727272727,
-      "confidence": 0.13150582015814438,
+      "positiveRate": 1.0,
+      "confidence": 0.6096569663469354,
       "mentionsBySource": {
         "hn": 9,
         "reddit": 13
@@ -286,7 +288,7 @@
         "evidence/2026-10-01.jsonl#l1171",
         "evidence/2026-10-01.jsonl#l1172"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "anthropic/claude-sonnet-5",
@@ -309,7 +311,8 @@
         "speed": 0,
         "tokenEfficiency": 0,
         "tokenUsage": 0,
-        "priceValue": 1
+        "priceValue": 1,
+        "overall": 2
       },
       "sampleSize": 2,
       "positiveRate": 1.0,
@@ -322,7 +325,7 @@
         "evidence/2026-10-01.jsonl#l59",
         "evidence/2026-10-01.jsonl#l60"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "openai/gpt-5.6-luna",
@@ -345,11 +348,12 @@
         "speed": 2,
         "tokenEfficiency": 1,
         "tokenUsage": 5,
-        "priceValue": 16
+        "priceValue": 16,
+        "overall": 25
       },
       "sampleSize": 58,
-      "positiveRate": 0.27586206896551724,
-      "confidence": 0.17752203680746195,
+      "positiveRate": 0.64,
+      "confidence": 0.44518154601046633,
       "mentionsBySource": {
         "hn": 2,
         "reddit": 49,
@@ -415,7 +419,7 @@
         "evidence/2026-10-01.jsonl#l1454",
         "evidence/2026-10-01.jsonl#l1455"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "z-ai/glm-5.3-flash",
@@ -438,11 +442,12 @@
         "speed": 24,
         "tokenEfficiency": 2,
         "tokenUsage": 6,
-        "priceValue": 15
+        "priceValue": 15,
+        "overall": 46
       },
       "sampleSize": 94,
-      "positiveRate": 0.2553191489361702,
-      "confidence": 0.1779922418978549,
+      "positiveRate": 0.5217391304347826,
+      "confidence": 0.38137172148151327,
       "mentionsBySource": {
         "hn": 24,
         "reddit": 59,
@@ -544,7 +549,7 @@
         "evidence/2026-10-01.jsonl#l1074",
         "evidence/2026-10-01.jsonl#l1430"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "anthropic/claude-fable-5.1",
@@ -567,11 +572,12 @@
         "speed": 2,
         "tokenEfficiency": 12,
         "tokenUsage": 13,
-        "priceValue": 8
+        "priceValue": 8,
+        "overall": 43
       },
       "sampleSize": 114,
-      "positiveRate": 0.22807017543859648,
-      "confidence": 0.16065986333040763,
+      "positiveRate": 0.6046511627906976,
+      "confidence": 0.4557879659331909,
       "mentionsBySource": {
         "hn": 22,
         "reddit": 91,
@@ -693,7 +699,7 @@
         "evidence/2026-10-01.jsonl#l1403",
         "evidence/2026-10-01.jsonl#l1404"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "google/gemini-2.5-pro",
@@ -716,11 +722,12 @@
         "speed": 0,
         "tokenEfficiency": 0,
         "tokenUsage": 0,
-        "priceValue": 2
+        "priceValue": 2,
+        "overall": 12
       },
       "sampleSize": 16,
-      "positiveRate": 0.3125,
-      "confidence": 0.14164435051961052,
+      "positiveRate": 0.4166666666666667,
+      "confidence": 0.19325746190524656,
       "mentionsBySource": {
         "reddit": 8,
         "x": 8
@@ -743,7 +750,7 @@
         "evidence/2026-10-01.jsonl#l279",
         "evidence/2026-10-01.jsonl#l280"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "openai/gpt-6-sol",
@@ -766,11 +773,12 @@
         "speed": 4,
         "tokenEfficiency": 3,
         "tokenUsage": 7,
-        "priceValue": 26
+        "priceValue": 26,
+        "overall": 36
       },
       "sampleSize": 79,
-      "positiveRate": 0.24050632911392406,
-      "confidence": 0.15972056887933211,
+      "positiveRate": 0.5277777777777778,
+      "confidence": 0.3700567162693947,
       "mentionsBySource": {
         "hn": 13,
         "reddit": 63,
@@ -857,7 +865,7 @@
         "evidence/2026-10-01.jsonl#l271",
         "evidence/2026-10-01.jsonl#l391"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "anthropic/claude-sonnet-5.5",
@@ -880,11 +888,12 @@
         "speed": 2,
         "tokenEfficiency": 1,
         "tokenUsage": 4,
-        "priceValue": 13
+        "priceValue": 13,
+        "overall": 37
       },
       "sampleSize": 66,
-      "positiveRate": 0.22727272727272727,
-      "confidence": 0.1428510508724467,
+      "positiveRate": 0.40540540540540543,
+      "confidence": 0.2634629583994014,
       "mentionsBySource": {
         "hn": 16,
         "reddit": 38,
@@ -958,7 +967,7 @@
         "evidence/2026-10-01.jsonl#l187",
         "evidence/2026-10-01.jsonl#l188"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "moonshotai/kimi-k3",
@@ -981,11 +990,12 @@
         "speed": 13,
         "tokenEfficiency": 2,
         "tokenUsage": 4,
-        "priceValue": 15
+        "priceValue": 15,
+        "overall": 52
       },
       "sampleSize": 119,
-      "positiveRate": 0.25210084033613445,
-      "confidence": 0.18267522357575813,
+      "positiveRate": 0.5769230769230769,
+      "confidence": 0.44194084979431497,
       "mentionsBySource": {
         "hn": 21,
         "reddit": 84,
@@ -1112,7 +1122,7 @@
         "evidence/2026-10-01.jsonl#l1293",
         "evidence/2026-10-01.jsonl#l1294"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "anthropic/claude-opus-5.5",
@@ -1135,11 +1145,12 @@
         "speed": 7,
         "tokenEfficiency": 7,
         "tokenUsage": 14,
-        "priceValue": 20
+        "priceValue": 20,
+        "overall": 110
       },
       "sampleSize": 239,
-      "positiveRate": 0.22594142259414227,
-      "confidence": 0.17749925799136768,
+      "positiveRate": 0.4909090909090909,
+      "confidence": 0.3993812926379583,
       "mentionsBySource": {
         "hn": 68,
         "reddit": 158,
@@ -1386,7 +1397,7 @@
         "evidence/2026-10-01.jsonl#l631",
         "evidence/2026-10-01.jsonl#l632"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "z-ai/glm-5.3-prime",
@@ -1409,7 +1420,8 @@
         "speed": 0,
         "tokenEfficiency": 0,
         "tokenUsage": 0,
-        "priceValue": 0
+        "priceValue": 0,
+        "overall": 0
       },
       "sampleSize": 4,
       "positiveRate": 0.0,
@@ -1423,7 +1435,7 @@
         "evidence/2026-10-01.jsonl#l32",
         "evidence/2026-10-01.jsonl#l33"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "openai/gpt-6-astra",
@@ -1446,11 +1458,12 @@
         "speed": 11,
         "tokenEfficiency": 4,
         "tokenUsage": 4,
-        "priceValue": 23
+        "priceValue": 23,
+        "overall": 108
       },
       "sampleSize": 311,
-      "positiveRate": 0.17363344051446947,
-      "confidence": 0.13558453106773613,
+      "positiveRate": 0.5,
+      "confidence": 0.407333152227769,
       "mentionsBySource": {
         "hn": 136,
         "reddit": 162,
@@ -1769,7 +1782,7 @@
         "evidence/2026-10-01.jsonl#l937",
         "evidence/2026-10-01.jsonl#l938"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "anthropic/claude-opus-5",
@@ -1792,11 +1805,12 @@
         "speed": 0,
         "tokenEfficiency": 9,
         "tokenUsage": 4,
-        "priceValue": 4
+        "priceValue": 4,
+        "overall": 21
       },
       "sampleSize": 29,
-      "positiveRate": 0.3103448275862069,
-      "confidence": 0.17275424489768068,
+      "positiveRate": 0.42857142857142855,
+      "confidence": 0.24469699486521046,
       "mentionsBySource": {
         "hn": 3,
         "reddit": 25,
@@ -1833,7 +1847,7 @@
         "evidence/2026-10-01.jsonl#l1187",
         "evidence/2026-10-01.jsonl#l1188"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     },
     {
       "id": "x-ai/grok-4.7",
@@ -1856,11 +1870,12 @@
         "speed": 3,
         "tokenEfficiency": 5,
         "tokenUsage": 10,
-        "priceValue": 17
+        "priceValue": 17,
+        "overall": 74
       },
       "sampleSize": 154,
-      "positiveRate": 0.15584415584415584,
-      "confidence": 0.10701866048479707,
+      "positiveRate": 0.32432432432432434,
+      "confidence": 0.22863921647459504,
       "mentionsBySource": {
         "hn": 13,
         "reddit": 129,
@@ -2022,7 +2037,7 @@
         "evidence/2026-10-01.jsonl#l427",
         "evidence/2026-10-01.jsonl#l428"
       ],
-      "updatedAt": "2026-10-01T22:54:03Z"
+      "updatedAt": "2026-10-01T23:12:04Z"
     }
   ]
 }
