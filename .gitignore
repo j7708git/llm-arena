@@ -22,3 +22,6 @@ logs/
 # archify 自動檢查截圖（可重新產生，不進版控）
 docs/architecture.visual-check.*
 .openchamber/
+
+# 內部工作紀錄（計畫、研究、進度、session 日誌）：留在本機，不進版控
+.local/
