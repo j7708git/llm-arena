@@ -341,8 +341,8 @@
       "dot": "orange",
       "title": "尚未完成",
       "items": [
-        "calibrated=false 待 owner 認可；排程頻率（每日／每週）未定",
-        "jason-lab 未動工；qwen3.7-flash 單飛評估等一致率數據累積"
+        "每日排程已接上（2026-10-05 起）：每日 04:00 自動 collect→score→build→validate 並 commit 資料產物；push 仍由 owner 手動",
+        "低樣本席名次仍受小樣本效應影響，樣本累積後才會穩定；C10 的 thread.title 待裁定項與清單擴充照計畫走"
       ]
     }
   ]

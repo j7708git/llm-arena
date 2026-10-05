@@ -15,7 +15,11 @@
   2026-10-02 完成 C10：**歸屬與情緒分離**——主貼決定歸屬、留言繼承（裁定 15），
   每串留言上限 20、evidence 加 `thread` 欄位（evidence schema v1.3）、`scores.json`
   契約不變（仍 v1.2）。樣本數現況見下方「資料現況」。
-  詳見 `docs/plan.md` 與 `docs/calibration-report.md`
+  詳見 `docs/plan.md` 與 `docs/calibration-report.md`。
+  **每日排程（2026-10-05 起）**：OpenChamber 排程任務「llm-arena-每日資料更新」
+  每天 04:00（Asia/Taipei）自動跑 `collect`→`score`→`build`→`validate`，
+  資料產物自動 commit 進版控並同步到 jason-lab（`sync:scores`）；
+  `score` 是增量的（只評新留言），**push 仍由 owner 手動確認**。
 
 ## 產出什麼
 
