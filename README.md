@@ -18,8 +18,10 @@
   詳見 `docs/plan.md` 與 `docs/calibration-report.md`。
   **每日排程（2026-10-05 起）**：OpenChamber 排程任務「llm-arena-每日資料更新」
   每天 04:00（Asia/Taipei）自動跑 `collect`→`score`→`build`→`validate`，
-  資料產物自動 commit 進版控並同步到 jason-lab（`sync:scores`）；
-  `score` 是增量的（只評新留言），**push 仍由 owner 手動確認**。
+  資料產物自動 commit 進版控；`score` 是增量的（只評新留言），
+  **push 仍由 owner 手動確認**。
+  網站端（jason-lab）的資料同步與部署由 jason-lab 自己的排程負責：
+  它會定時比對網站資料與本管線的資料產物，有差異就自動同步、建置、部署。
 
 ## 產出什麼
 
