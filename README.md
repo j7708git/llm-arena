@@ -36,8 +36,8 @@
 1. **模型清單（v2，15 席）**：以人工維護清單為主，附掛 OpenRouter 公開 API `https://openrouter.ai/api/v1/models` 的定價與 context length（用 API，不爬 HTML）。
    清單 2026-10-01 換血：移除 `claude-sonnet-4`／`gpt-5`／`deepseek-v3.1`
    （舊世代且被引擎模糊比對嚴重污染，X 池實測 Sonnet 4 命中 0/2、GPT-5 命中 1/7），
-   保留 `gemini-2.5-pro` 等 5 席，新增研究報告的 A 檔 5 席＋B 檔 5 席
-   （`docs/research/model-roster-survey.md`，契約見 `docs/plan.md` 裁定 14）。
+   保留 `gemini-2.5-pro` 等 5 席，新增 A 檔 5 席＋B 檔 5 席
+   （入選以 X 池實掃的版本精確提及筆數為準；清單與歸屬規則見 `docs/plan.md`）。
 2. **社群收集**：排程 agent 使用 `last30days` 技能抓近 30 天社群討論（Reddit／HN／X）。
    Reddit／HN 改「**留言逐則**」：主貼不評分，每個討論串取熱門前 20 則**留言**，
    每則留言各自成一筆 evidence（裁定 13）；X 維持每則推文一筆。
@@ -54,9 +54,9 @@
    多數決機制保留在程式中（`arena.jury.JURY_MEMBERS` 改一行即可擴編）。
 
    > 初版評分器 `laya`（JEV 家族小模型）已於 2026-09-30 淘汰：它在 gold 考卷上
-   > 只有 0.4424，對這種語意判斷明顯不準確（domain fit 問題）。研究與淘汰理由見
-   > `docs/research/laya-usage-accuracy.md`；其 0.4424 量自已作廢的舊 gold，
-   > 與現行評審團的 0.8174 沒有直接對比。
+   > 只有 0.4424（官方同族任務 self-eval 亦僅 0.442），對這種語意判斷明顯不準確
+   > （domain fit 問題）。其 0.4424 量自已作廢的舊 gold，與現行評審在 gold v2 上
+   > 的 0.8174 沒有直接對比。
 4. **分數是算出來的**：每個面向 `raw=(P−N)/(P+N)`、`dimScore=50×(raw+1)`，
    再以偽樣本數 `K=10` 向 50 收縮（樣本越小越往 50 靠攏）；總分＝各面向加權平均
    （權重見 `meta.weights`，null 維度剔除後重歸一）。公式可驗證，模型不直接打分。
@@ -133,7 +133,7 @@
   平均 13.4 則／串、上限 20）；108 筆 X 推文與 77 筆 C9 舊留言列不帶（v1.2 形狀）。
   歸屬來源：自身精確提及 240 筆（16.5%）／繼承自主貼 1195 筆（82.1%），
   另有 20 筆（1.4%）因主貼**標題**不帶版本號而無法用 `thread.title` 佐證
-  （見 `docs/progress-status.md` 第 8 節待裁定項）。
+  （修正方向待裁定）。
   每筆的 url 都可連回（`tools/verify_pool.py` 可複驗）。
 - `data/scores.json`：**v3 榜單已產出**（2026-10-02；15 席、judge=`llm-jury@557e1059`、
   `sourcesCovered=[hn,reddit,x]`、`schemaVersion` 仍 1.2）。樣本數 2~311，
@@ -151,7 +151,8 @@ src/               fetch-models / collect / score / build / validate（＋calibr
 data/              scores.json、evidence/*.jsonl、calibration/（C5 標註工作檔）
 tools/             verify_pool.py（池品質驗收）、gold 標註與驗證工具
 tests/
-docs/              plan.md、annotation-guide.md、research/
+docs/              plan.md（契約）、annotation-guide.md、calibration-report.md、
+                   architecture.html
 .env.example       環境設定範例（複製為 .env；.env 已 gitignore）
 ```
 
@@ -235,8 +236,7 @@ evidence。輸出採**原子寫入**（先寫同目錄暫存檔再 rename），�
 ```
 
 > 舊評分器 `laya`（JEV 家族、CPU 本地推論）的安裝與調校說明已隨其淘汰移除；
-> 歷史選型理由與坑清單保留在 `docs/research/jev-scoring.md` 與
-> `docs/research/laya-usage-accuracy.md`。
+> 歷史選型理由與版本演進摘要保留在 `docs/plan.md` 的「schema 版本歷史」一節。
 
 ### 資料契約（scores.json v1.2／evidence v1.3）
 
@@ -491,7 +491,7 @@ export OPENROUTER_API_KEY=sk-or-...
 **overall 0.8174 ✅**，報告見 `docs/calibration-report.md`。
 
 > 舊版流程（laya-evals 本地校準、`arena calibrate make-evals`）隨 laya 淘汰，
-> 僅保留於 git 歷史與 `docs/research/laya-usage-accuracy.md`。
+> 僅保留於 git 歷史。
 
 ## 注意事項
 

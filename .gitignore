@@ -10,6 +10,7 @@ __pycache__/
 .ruff_cache/
 
 # 暫存與快取（原始抓取的中間產物；正式資料在 data/ 且要進版控）
+.tmp/
 .scratch/
 cache/
 logs/
