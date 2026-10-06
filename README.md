@@ -14,8 +14,10 @@
   2026-10-02 以 `qwen3.7-flash` 單評審重評並產出 **v2 榜單**（15 席，網站即讀此檔）。
   2026-10-02 完成 C10：**歸屬與情緒分離**——主貼決定歸屬、留言繼承（裁定 15），
   每串留言上限 20、evidence 加 `thread` 欄位（evidence schema v1.3）、`scores.json`
-  契約不變（仍 v1.2）。樣本數現況見下方「資料現況」。
-  詳見 `docs/plan.md` 與 `docs/calibration-report.md`。
+  契約不變（仍 v1.2）。
+  2026-10-05 完成 C11：`thread` 再加**可選** `body`（主貼內文），補足「標題不帶
+  版本號、版本只在內文」的歸屬憑據（evidence schema v1.4，裁定 17）。
+  樣本數現況見下方「資料現況」。詳見 `docs/plan.md` 與 `docs/calibration-report.md`。
   **每日排程（2026-10-05 起）**：OpenChamber 排程任務「llm-arena-每日資料更新」
   每天 04:00（Asia/Taipei）自動跑 `collect`→`score`→`build`→`validate`，
   資料產物自動 commit 進版控；`score` 是增量的（只評新留言），
@@ -106,7 +108,7 @@
 | --- | --- | --- |
 | 收集（collect） | 用搜尋引擎抓近 30 天的社群討論 | 是抓一次存成快照，不是即時查詢；原文被刪也不影響已存下的資料 |
 | 歸屬 | 判斷一則留言**在講哪個模型** | 判斷錯就會「張冠李戴」（新模型的討論算到舊模型頭上） |
-| 繼承（`thread`） | 留言自己沒寫出模型名時，依**主貼標題**歸屬給該串的模型 | 目前 82% 的留言靠這條規則；查核時可展開 `thread.title` 看上下文 |
+| 繼承（`thread`） | 留言自己沒寫出模型名時，依**主貼標題／內文**歸屬給該串的模型 | 目前 82% 的留言靠這條規則；查核時可展開 `thread.title`（標題不帶版本號時另有 `thread.body`）看上下文 |
 | 評審（judge） | 負責判斷留言態度的 AI 模型。演進：最早試過 JEV 家族的小模型 **laya**（2026-09-30 淘汰，考卷只有 0.44 分）→ 改成**四家 AI 組評審團、投票取多數決** → 2026-10-01 再收斂為 **`qwen3.7-flash` 單一評審**（考卷 0.85、成本剩 1/16）。多數決機制保留在程式裡，要擴編改一行即可 | 分數不是模型自己打的，是評審逐則判斷後**算出來**的 |
 | gold（考卷） | 由多個模型逐則標註出來的**標準答案集** | 用來驗證評審準不準 |
 | 校準（`calibrated`） | 評審在 gold 考卷上達標（overall ≥ 0.80） | `meta.judge.calibrated: true` 才代表考過試 |
@@ -125,15 +127,16 @@
       not-discussed baseline」（not-discussed 佔九成時絕對 0.80 是誤導性指標）；
       有討論列數 <10 的面向標『樣本不足』，站方呈現須標註各面向可信度。
 
-## 資料現況（2026-10-02，C10 重收集後）
+## 資料現況（2026-10-02，C10 重收集後；2026-10-05 C11 補 `thread.body`）
 
 - `data/models.json`：**15 席**，OpenRouter 實查全部有定價與 context（0 缺欄）。
 - `data/evidence/2026-10-01.jsonl`：**1455 筆**（reddit 970／hn 377／x 108），
   一筆＝一則留言或一則推文。**1270 筆留言帶 `thread` 欄位**（95 個討論串，
   平均 13.4 則／串、上限 20）；108 筆 X 推文與 77 筆 C9 舊留言列不帶（v1.2 形狀）。
-  歸屬來源：自身精確提及 240 筆（16.5%）／繼承自主貼 1195 筆（82.1%），
-  另有 20 筆（1.4%）因主貼**標題**不帶版本號而無法用 `thread.title` 佐證
-  （修正方向待裁定）。
+  其中 **640 筆另帶 `thread.body`**（v1.4 主貼內文；主貼標題已帶版本號或無內文者省略）。
+  歸屬來源：自身精確提及 240 筆（16.5%）／繼承自主貼 1215 筆（83.5%）。
+  原本 20 筆（1.4%）因主貼**標題**不帶版本號而無法用 `thread.title` 佐證，C11 補
+  `thread.body` 後**已全部可佐證**（`tools/verify_pool.py` 全池 0 不通過）。
   每筆的 url 都可連回（`tools/verify_pool.py` 可複驗）。
 - `data/scores.json`：**v3 榜單已產出**（2026-10-02；15 席、judge=`llm-jury@557e1059`、
   `sourcesCovered=[hn,reddit,x]`、`schemaVersion` 仍 1.2）。樣本數 2~311，
@@ -149,7 +152,8 @@
 ```
 src/               fetch-models / collect / score / build / validate（＋calibrate 標註工具）
 data/              scores.json、evidence/*.jsonl、calibration/（C5 標註工作檔）
-tools/             verify_pool.py（池品質驗收）、gold 標註與驗證工具
+tools/             verify_pool.py（池品質驗收）、backfill_thread_body.py（thread.body
+                   回填）、gold 標註與驗證工具
 tests/
 docs/              plan.md（契約）、annotation-guide.md、calibration-report.md、
                    architecture.html
@@ -238,7 +242,7 @@ evidence。輸出採**原子寫入**（先寫同目錄暫存檔再 rename），�
 > 舊評分器 `laya`（JEV 家族、CPU 本地推論）的安裝與調校說明已隨其淘汰移除；
 > 歷史選型理由與版本演進摘要保留在 `docs/plan.md` 的「schema 版本歷史」一節。
 
-### 資料契約（scores.json v1.2／evidence v1.3）
+### 資料契約（scores.json v1.2／evidence v1.4）
 
 evidence 的每則貼文以 `votes` 記錄評審的**判定結果**（六題：`overall` 總評＋
 五個面向 `quality`／`speed`／`tokenEfficiency`／`tokenUsage`／`priceValue`），
@@ -247,10 +251,12 @@ evidence 的每則貼文以 `votes` 記錄評審的**判定結果**（六題：`
 build 自動排除）。評審的原始票保留在 `juryVotes.<面向>.<評審短名>`。未評分時
 `votes`／`juryVotes`／`judge` 為 `null`，結構仍合法。
 
-**evidence v1.3 的 `thread` 欄位**（裁定 15）：每則留言 row 可帶
-`thread = {url, title, modelId}`，記錄它繼承（或改判自）哪個主貼、主貼歸屬哪個模型。
-欄位**可選** → `arena validate` 同時接受 v1.2（無 `thread`，含舊池與 X 推文）
-與 v1.3（有 `thread`）兩種列；`scores.json` 契約不變（仍 v1.2）。
+**evidence v1.3／v1.4 的 `thread` 欄位**（裁定 15、17）：每則留言 row 可帶
+`thread = {url, title, modelId, body?}`，記錄它繼承（或改判自）哪個主貼、主貼歸屬
+哪個模型。`body`（v1.4）是**可選**的主貼內文（截斷至 1200 字元），當主貼標題不帶
+版本號、版本只出現在內文時補上歸屬憑據。欄位**可選** → `arena validate` 同時接受
+v1.2（無 `thread`，含舊池與 X 推文）、v1.3（有 `thread`）與 v1.4（`thread` 含
+`body`）；`scores.json` 契約不變（仍 v1.2）。
 
 rubric（題目文字見 `src/arena/score.py` 的 `QUESTION`；`overall` 用 positive／negative／
 neutral，五個面向用 positive／negative／`not-discussed`）：
@@ -378,11 +384,12 @@ X 憑證放在 **`~/.config/last30days/.env`**（不放 repo、不進版控）�
     3. 只提品牌字且屬**串本身家族** → 繼承該串；
     4. 只提品牌字且屬**其他家族** → 丟（無法判定是哪一版）；
     5. 完全不提任何模型 → 繼承該串。
-- **`thread` 欄位（evidence schema v1.3）**：每則留言 row 帶
-  `thread = {url, title, modelId}`——主貼永久連結、主貼標題、**該串**歸屬的模型，
-  讓歸屬依據可回溯（站方與稽核可分辨「這則自己提到模型」或「繼承主貼」）。
-  HN 的 `thread.url` 由 Algolia 以標題回查（引擎給的 url 常是外部原文）。
-  X 推文**不帶**此欄。`scores.json` 契約不變（仍 v1.2）。
+- **`thread` 欄位（evidence schema v1.3／v1.4）**：每則留言 row 帶
+  `thread = {url, title, modelId, body?}`——主貼永久連結、主貼標題、**該串**歸屬的
+  模型，以及（v1.4，可選）主貼內文 `body`，讓歸屬依據可回溯（站方與稽核可分辨
+  「這則自己提到模型」或「繼承主貼」）。`body` 只在標題不帶版本號時存在，截斷至
+  1200 字元、不影響 `hash`。HN 的 `thread.url` 由 Algolia 以標題回查（引擎給的 url
+  常是外部原文）。X 推文**不帶**此欄。`scores.json` 契約不變（仍 v1.2）。
 - **`text`**：X 是 `title` ＋ `summary` 合成、Reddit／HN 是留言原文，一律
   **截斷至 1200 字元**（控制單則的評分 prompt 大小與成本）。
 - **`hash`**：正規化文字（小寫、空白壓扁）的 sha256，**跨所有 evidence 檔去重**

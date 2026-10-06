@@ -1,6 +1,6 @@
 """`arena collect` 的實作（任務 C2）：近 30 天社群貼文收集。
 
-流程（依 ``docs/plan.md`` 的「收集策略」與 ``docs/research/last30days-skill.md``）：
+流程（依 ``docs/plan.md`` §2「管線概觀」與 §7「模型清單與歸屬規則」）：
 
 1. 讀 ``config/models.yaml`` 的人工模型清單，對每個模型的 ``name`` 當查詢字串，
    呼叫 vendor 的 ``last30days`` 引擎（``--emit=json --json-profile=agent``，契約
@@ -20,7 +20,9 @@
    的模型，未通過歸屬的串其留言全丟；通過的串再逐則走
    :func:`classify_comment_attribution`（五條優先序：自身精確提及 → 歸它；
    清單外版本 → 丟；只提同家族品牌字 → 繼承；只提他家族品牌字 → 丟；完全不提模型 →
-   繼承）。每列另帶可選的 ``thread`` 欄位（schema v1.3）記錄主貼 url／title／modelId。
+   繼承）。每列另帶可選的 ``thread`` 欄位（schema v1.3／v1.4）記錄主貼
+   url／title／body／modelId：``body`` 是主貼內文（v1.4，裁定 17），當標題不帶
+   版本號時才是可佐證的歸屬憑據，無內文或與標題重複時省略。
    X 維持每則推文一筆（X 池沒有留言結構），歸屬用主貼層級規則、不帶 ``thread``。
 4. **轉換**：``source``（hackernews→hn，x→x）、``url``、``postedAt``（ISO）、
    ``text``（title＋summary，截斷至 :data:`MAX_TEXT_CHARS` 字元，理由見證 R1 筆記
@@ -735,6 +737,24 @@ def compose_text(title: str, summary: str) -> str:
     return f"{title}\n{summary}"
 
 
+def _thread_body(title: str, summary: str) -> str:
+    """取出主貼內文（v1.4，裁定 17）：引擎的 ``summary`` 去掉重複的標題前綴。
+
+    ``compose_text`` 在 summary 已含 title 時只留 summary；此處反向把逐字相同的
+    標題前綴去掉，只留真正的內文。summary 與標題相同（如 HN 純連結）或為空時
+    回空字串，呼叫端據此省略 ``thread.body``。
+    """
+    summary = summary.strip()
+    title = title.strip()
+    if not summary:
+        return ""
+    if title and summary.startswith(title):
+        return summary[len(title):].lstrip(" \n\t-:—")
+    if summary == title:
+        return ""
+    return summary
+
+
 def x_author_from_url(url: str) -> str | None:
     """從 X 永久連結取出作者帳號（``@handle``）；格式不符回 ``None``。
 
@@ -861,6 +881,7 @@ def build_comment_records(
     source: str,
     thread_url: str,
     thread_title: str,
+    thread_body: str = "",
 ) -> list[dict[str, Any]]:
     """把一個討論串的熱門留言轉成 evidence 列（裁定 13：每則留言各自成 row）。
 
@@ -869,15 +890,20 @@ def build_comment_records(
     （裁定 15，:func:`classify_comment_attribution`）：留言自己精確提到清單模型就歸它，
     否則按五條優先序決定繼承該串或丟棄。
 
-    每列另帶**可選**的 ``thread`` 欄位（evidence schema v1.3）
-    ``{url, title, modelId}``：主貼永久連結、主貼標題、**該串**歸屬的模型。歸屬依據
-    靠它回溯，X 推文（無留言結構）不帶此欄。
+    每列另帶**可選**的 ``thread`` 欄位（evidence schema v1.3／v1.4）
+    ``{url, title, modelId, body?}``：主貼永久連結、主貼標題、**該串**歸屬的模型，
+    以及（v1.4，裁定 17）主貼內文 ``body``（截斷沿用 :data:`MAX_TEXT_CHARS`，
+    無內文或與標題相同時省略）。歸屬依據靠它回溯，X 推文（無留言結構）不帶此欄。
     """
-    thread_ref = {
+    thread_ref: dict[str, Any] = {
         "url": thread_url,
         "title": thread_title[:MAX_TEXT_CHARS],
         "modelId": model["id"],
     }
+    # v1.4（裁定 17）：主貼內文。空字串／與標題相同（無額外資訊）時整欄省略。
+    body = thread_body.strip()
+    if body and body != thread_title.strip():
+        thread_ref["body"] = body[:MAX_TEXT_CHARS]
     records: list[dict[str, Any]] = []
     for comment in comments:
         text = str(getattr(comment, "text", "") or "").strip()
@@ -903,8 +929,9 @@ def build_comment_records(
                 "author": author,
                 "postedAt": posted_at,
                 "text": text[:MAX_TEXT_CHARS],
-                # v1.3：記錄歸屬依據（主貼）。繼承者與 self 歸屬都帶，方便站方與稽核
-                # 分辨「這則自己提到模型」或「繼承主貼」。
+                # v1.3／v1.4：記錄歸屬依據（主貼 url／title／modelId，v1.4 另有 body）。
+                # 繼承者與 self 歸屬都帶，方便站方與稽核分辨「這則自己提到模型」或
+                # 「繼承主貼」。
                 "thread": dict(thread_ref),
                 "votes": None,
                 "judge": None,
@@ -994,6 +1021,8 @@ def build_records(
             thread_title = str(result.get("title") or "").strip()
             if not thread_title:
                 thread_title = text.splitlines()[0].strip()
+            # v1.4（裁定 17）：主貼內文（引擎的 summary），供標題不帶版本號時佐證歸屬。
+            thread_body = _thread_body(thread_title, str(result.get("summary") or ""))
             try:
                 comments = comment_fetcher.thread_comments(
                     source=source, url=url, title=thread_title
@@ -1016,6 +1045,7 @@ def build_records(
                 source=source,
                 thread_url=_thread_permalink(comment_fetcher, source, url, thread_title),
                 thread_title=thread_title,
+                thread_body=thread_body,
             )
             records.extend(rows)
             for _ in rows:
@@ -1053,14 +1083,19 @@ def _validated(record: dict[str, Any]) -> dict[str, Any] | None:
 
     ``thread`` 為 null 時**整欄省略**（X 推文沒有主貼；v1.2 的留言 row 也可能沒有），
     不落地成 ``"thread": null``——欄位語意是「有主貼才有 thread」。
+    ``thread.body`` 為 null（v1.4 可選、無內文）時同樣整鍵省略，讓這些列維持
+    v1.3 形狀，不寫多餘的 ``"body": null``。
     """
     try:
         parsed = EvidenceRecord.model_validate(record)
     except Exception:  # pydantic.ValidationError
         return None
     dumped = parsed.model_dump(mode="json")
-    if dumped.get("thread") is None:
+    thread = dumped.get("thread")
+    if thread is None:
         dumped.pop("thread", None)
+    elif thread.get("body") is None:
+        thread.pop("body", None)
     return dumped
 
 

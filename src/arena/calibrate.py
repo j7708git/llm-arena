@@ -1,7 +1,7 @@
 """人工標註工作檔的抽樣與評測集轉換（任務 C5a）。
 
-設計與抽樣方法以 ``docs/research/jev-scoring.md``「校準驗證方法」全節（R1 筆記）
-為準，欄位語意以 ``docs/plan.md`` v1.1 契約與實作裁定 8 為準：
+設計與抽樣方法以 ``docs/plan.md`` §6（評審契約與校準）為準，欄位語意以
+``docs/plan.md`` §4（evidence 資料契約）與實作裁定 8 為準：
 
 - **分層抽樣**（R1 步驟 1）：來源（reddit／hn／x）× 信心帶
   （``answer_confidence < 0.70`` 為低信心、加權 2–3 倍）。預設以 ``overall`` 的

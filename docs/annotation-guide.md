@@ -2,8 +2,8 @@
 
 > 版本：v1（2026-09-29）**已凍結**。本檔是 `laya` 評分器校準驗證（C5）的 ground truth 標註規則；
 > 一旦開始標註就不可再改判準（改了要重標，否則標註集不能用）。要改請先提修訂並重跑。
-> 依據：`docs/research/jev-scoring.md`「校準驗證方法」全節（R1 筆記）、
-> `docs/plan.md` 資料契約 v1.1 與實作裁定第 8 條。
+> 依據：`docs/plan.md` §6（評審契約與校準）與 §4（evidence 資料契約），
+> 以及 `docs/calibration-report.md`。
 > 對應工作檔：`data/calibration/annotation-worksheet.jsonl`（由 `python -m arena.calibrate sample` 產生）。
 
 ---
@@ -293,7 +293,7 @@ pe = Σ_c (第一人標 c 的比例 × 第二人標 c 的比例)
 若環境有 scikit-learn，可直接 `cohen_kappa_score(a, b)`。Dice 一致性也可一併看，但門檻以 κ 為準。
 
 第二人重標的 30 筆**不進** `gold.jsonl`（gold 仍以第一人為準）；κ 的結果寫進
-`docs/research/jev-scoring.md` 的 C5 紀錄。
+`docs/calibration-report.md` 的 C5 紀錄。
 
 ---
 

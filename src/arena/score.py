@@ -11,8 +11,8 @@ C8（2026-09-30）後 `arena score` 的預設 judge 是 LLM 評審團，實作�
 ``os.replace`` 覆蓋；過程中任何例外都不會留下半截 jsonl。已有 ``votes`` 的行會被跳過
 （冪等），``force`` 為真時才重評。
 
-C3 的 laya 實作（設計與用法見 ``docs/research/jev-scoring.md``）保留在此，
-標記為 DEPRECATED；其 schema v1.1 欄位語意以 ``docs/plan.md``「資料契約」
+C3 的 laya 實作（設計與用法留在 git 歷史；現行評審契約見 ``docs/plan.md`` §6）
+保留在此，標記為 DEPRECATED；其 schema v1.1 欄位語意以 ``docs/plan.md`` §4
 與實作裁定 7~9 為準：
 
 - 模型：``convaiinnovations/laya`` 英文 checkpoint，pin revision

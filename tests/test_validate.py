@@ -288,6 +288,54 @@ def test_x_tweet_row_without_thread_is_valid() -> None:
     assert validate_evidence_lines(json.dumps(record, ensure_ascii=False) + "\n") == []
 
 
+# --- evidence v1.4：thread 新增可選 body（實作裁定 17）----------------------
+
+
+def _v14_record(**thread: object) -> dict:
+    """v1.4 的留言 row：v1.3 形狀＋``thread.body``（主貼內文）。"""
+    record = _v13_record()
+    record["thread"]["body"] = "The post body explicitly mentions Claude Opus 5.5."
+    record["thread"].update(thread)
+    return record
+
+
+def test_v14_evidence_with_thread_body_passes(tmp_path: Path) -> None:
+    """驗收：v1.4 列（thread 含 body）可通過 validate。"""
+    path = _write_record(tmp_path, _v14_record(), name="v14.jsonl")
+    assert validate_path(path) == []
+    assert main(["validate", str(path)]) == 0
+
+
+def test_v12_v13_v14_all_pass_together(tmp_path: Path) -> None:
+    """驗收：v1.2（無 thread）／v1.3（thread 無 body）／v1.4（含 body）三形狀皆合法。"""
+    v12 = _write_record(tmp_path, _v12_record(), name="v12.jsonl")
+    v13 = _write_record(tmp_path, _v13_record(), name="v13.jsonl")
+    v14 = _write_record(tmp_path, _v14_record(), name="v14.jsonl")
+
+    assert validate_path(v12) == []
+    assert validate_path(v13) == []
+    assert validate_path(v14) == []
+    assert main(["validate", str(v12), str(v13), str(v14)]) == 0
+
+
+def test_v14_thread_body_is_optional(tmp_path: Path) -> None:
+    """``body`` 可選：不帶 body 的 v1.3 列仍走同一個模型且合法。"""
+    assert _evidence_model_for(_v13_record()) is EvidenceRecordV12
+    assert validate_path(_write_record(tmp_path, _v13_record(), name="v13.jsonl")) == []
+
+
+def test_v14_thread_rejects_empty_body(tmp_path: Path) -> None:
+    record = _v14_record(body="")
+    errors = validate_path(_write_record(tmp_path, record))
+    assert any("body" in message for message in errors)
+
+
+def test_v14_thread_rejects_unknown_field(tmp_path: Path) -> None:
+    record = _v14_record(oops=True)
+    errors = validate_path(_write_record(tmp_path, record))
+    assert any("oops" in message for message in errors)
+
+
 # --- 合法 -------------------------------------------------------------------
 
 

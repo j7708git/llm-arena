@@ -5,7 +5,8 @@
 > `data/evidence/*.jsonl`。
 >
 > 目前契約版本：`data/scores.json` 為 **schema v1.2**；`data/evidence/*.jsonl`
-> 為 **v1.2／v1.3**（v1.3 只多一個可選 `thread` 欄位，v1.2 形狀仍合法）。
+> 為 **v1.2／v1.3／v1.4**（v1.3 多一個可選 `thread` 欄位、v1.4 再為 `thread`
+> 加一個可選 `body`；v1.2 形狀仍合法）。
 
 ## 1. 定位與產物
 
@@ -116,10 +117,10 @@ fetch-models → collect → score → build → validate
 - `positiveRate` 是「**有表態者中**」的正面比例，不是「所有人中喜歡的比例」；
   呈現時務必說明（見 §9）。
 
-## 4. `data/evidence/*.jsonl`（v1.2／v1.3）
+## 4. `data/evidence/*.jsonl`（v1.2／v1.3／v1.4）
 
-每行一筆 JSON。v1.2 與 v1.3 的差別只在 v1.3 多一個**可選** `thread` 欄位；
-`validate` 同時接受兩種列。
+每行一筆 JSON。v1.3 相對 v1.2 多一個**可選** `thread` 欄位；v1.4 再為 `thread`
+加一個**可選** `body`（主貼內文）。`validate` 同時接受三種列。
 
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
@@ -130,19 +131,29 @@ fetch-models → collect → score → build → validate
 | `author` | string / null | 原作者；補不到時為 `null`（站方顯示「未知作者」） |
 | `postedAt` | string | 張貼時間（ISO 8601） |
 | `text` | string | 內容；一律**截斷至 1200 字元** |
-| `thread` | object / null | **v1.3 可選**：留言所屬主貼與歸屬依據，見下；X 推文與 v1.2 舊列不帶此欄 |
+| `thread` | object / null | **v1.3／v1.4 可選**：留言所屬主貼與歸屬依據，見下；X 推文與 v1.2 舊列不帶此欄 |
 | `votes` | object / null | 六題聚合票（`overall` ＋五面向），見下；未評分時為 `null` |
 | `juryVotes` | object / null | 逐位評審的原始票（`<面向>.<評審短名>` → 標籤或 `null`） |
 | `judge` | string / null | 評審與版本，格式 `llm-jury@<membersHash 前 8 碼>`；未評分為 `null` |
 
-`thread`（v1.3）：
+`thread`（v1.3／v1.4）：
 
 ```jsonc
-"thread": { "url": "<主貼永久連結>", "title": "<主貼標題>", "modelId": "<該串歸屬的模型>" }
+"thread": {
+  "url": "<主貼永久連結>",
+  "title": "<主貼標題>",
+  "modelId": "<該串歸屬的模型>",
+  "body": "<主貼內文；v1.4 可選，截斷至 1200 字元>"
+}
 ```
 
 `thread.modelId` 一律是**該串**（主貼）的歸屬模型，不一定等於該列的 `modelId`
 （留言若自己精確提到另一個清單模型，可改判，見 §7）。
+
+`thread.body`（v1.4）是**可選**欄位：當主貼**標題不帶版本號**、版本號只出現在
+**內文**時，`title` 單獨撐不起歸屬憑據，`body` 補上內文讓歸屬可回溯。主貼標題
+已帶版本號、或主貼無內文（純連結／圖片）時省略。截斷規則與 `text` 相同（1200
+字元）；`body` **不影響**去重鍵 `hash`（`hash` 一律以 `text` 計算）。
 
 `votes` 的六題與標籤：
 
@@ -235,8 +246,9 @@ fetch-models → collect → score → build → validate
   因為留言本來就不會重複寫出模型版本（「它好爛」「這代超強」）。留言自己精確
   提到清單內某版本時歸那個（可改判）；提到清單外版本／他家族品牌字 → 丟。
   每串留言上限 20 則，Reddit 依熱度（score）、Hacker News 依樹狀順序取。
-- **可稽核性**：每則留言列以 `thread = {url, title, modelId}` 記錄歸屬依據，
-  能分辨「這則自己提到模型」或「繼承主貼」；X 推文不帶此欄。
+- **可稽核性**：每則留言列以 `thread = {url, title, modelId, body?}` 記錄歸屬依據，
+  能分辨「這則自己提到模型」或「繼承主貼」；`body`（v1.4，可選）是主貼內文，
+  當標題不帶版本號時才是可佐證的憑據；X 推文不帶此欄。
 
 ## 8. schema 版本歷史
 
@@ -245,6 +257,7 @@ fetch-models → collect → score → build → validate
 | **v1.1** | 2026-09-29 | 維度從固定欄位改為**開放 map**（5 面向＋總評），網站表格欄位由 `meta.dimensions` 驅動；evidence 的單筆 `label`／`prob` 改為 `votes` map；區分 `not-discussed`（沒談）與 `neutral`（談了但中立）；`P+N=0` 的面向為 `null`（資料不足）；定價 `priceUsdPerMTok` 移到 model 層級；新增 `meta.dimensions`／`weights`／`sourcesCovered`；`meta.judge = {model, revision, calibrated}`。 |
 | **v1.2** | 2026-09-30 | 引入 LLM 評審團：evidence 新增 `juryVotes`（逐位評審的原始票）；`votes` 改為多數決聚合，平手時 `label`／`prob` 可同為 `null`；`judge` 格式改為 `llm-jury@<hash 8 碼>`；`meta.judge = {kind: "llm-jury", members, calibrated}`、`meta.schemaVersion = 1.2`。**現行版本。** |
 | **v1.3** | 2026-10-02 | evidence 新增**可選** `thread` 欄位（`{url, title, modelId}`）記錄歸屬依據；`validate` 同時接受 v1.2（無 `thread`）與 v1.3（有 `thread`）。**`scores.json` 契約不變，仍為 v1.2。** |
+| **v1.4** | 2026-10-05 | `thread` 新增**可選** `body`（主貼內文，截斷至 1200 字元），補足「標題不帶版本號、版本只在內文」的歸屬憑據；`validate` 同時接受 v1.2／v1.3／v1.4。X 推文列仍**不得**帶 `thread`（含 `body`）；`body` 不影響 `hash`。**`scores.json` 契約不變，仍為 v1.2。** |
 
 補充（語意變更，版本號不變）：2026-10-02 起，`positiveRate` 與 `confidence` 的
 分母明確改為「**有表態**」筆數（`neutral` 不計），並以 `dimensionSamples.overall`
@@ -259,7 +272,8 @@ fetch-models → collect → score → build → validate
   造成的假象；不要把 `sampleSize` 當成熱門度條。
 - **正面率是「有表態者中的比例」**：留言近半數是離題／無立場（`neutral`），
   那些不進分母；呈現時要說明，否則使用者會把 0.5 誤讀成「一半的人沒意見」。
-- **歸屬可能繼承主貼**：多數留言本身沒寫模型名，是依主貼標題歸屬；呈現逐則
-  引用時建議一併顯示主貼標題（`thread.title`）與連結，讓查核者知道上下文。
+- **歸屬可能繼承主貼**：多數留言本身沒寫模型名，是依主貼標題／內文歸屬；呈現
+  逐則引用時建議一併顯示主貼標題（`thread.title`）與連結，標題不帶版本號時
+  （`thread.body` 存在）一併顯示內文，讓查核者知道上下文。
 - K=10 收縮使小樣本分數往 50 靠攏；低樣本模型的排名是小樣本效應，務必帶
   樣本數與 `confidence`。面向「有表態」筆數 < 10 時標『樣本不足』，不得據以結論。

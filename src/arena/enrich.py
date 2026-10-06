@@ -2,7 +2,7 @@
 
 C9 起另含「留言逐則」抓取（實作裁定 13，見 :class:`HttpCommentFetcher`）。
 
-背景（見 ``docs/research/last30days-skill.md`` 第 112 行起）：
+背景（收集引擎 agent JSON profile 的實測；以下為補缺所需的關鍵事實）：
 
 - `last30days` 的 agent JSON profile（v1.3）**沒有 ``author`` 欄位**，
   所以 C2 落地時必須自行補齊；補不到就留 ``null``，不能讓整個收集流程失敗。

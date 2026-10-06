@@ -7,8 +7,8 @@
 #   provider 廠牌顯示名（必填，供網站篩選）
 #   alias    選用；OpenRouter 查不到 id 時的備援匹配鍵（例如舊 id／canonical slug）
 #
-# 清單 v2（2026-10-01，實作裁定 14）。入選依據一律以 X 池實掃證據為準，見
-# `docs/research/model-roster-survey.md`（§2 名稱統計、§5 A/B 檔建議）：
+# 清單 v2（2026-10-01，實作裁定 14）。入選依據一律以 X 池實掃證據為準
+# （清單維護規則詳 `docs/plan.md` §7.1）：
 #   - 移除 anthropic/claude-sonnet-4（X 0/2 命中，名下貼文都在聊 Sonnet 5.5）
 #   - 移除 openai/gpt-5（X 1/7 命中，其餘在聊 GPT-5.6／6 系列）
 #   - 移除 deepseek/deepseek-v3.1（過時世代，且 OpenRouter 已下架）

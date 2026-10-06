@@ -1,4 +1,4 @@
-"""schema v1.1／v1.2／evidence v1.3 的 pydantic 定義（`arena validate` 的唯一依據）。
+"""schema v1.1／v1.2／evidence v1.3／v1.4 的 pydantic 定義（`arena validate` 的唯一依據）。
 
 此檔是 `docs/plan.md`「資料契約」與「Schema 實作裁定」的可執行版本：欄位一律以計畫為準，
 不自行增減。若計畫的 schema 有歧義或需要變更，先改 `docs/plan.md` 再改這裡，
@@ -45,6 +45,14 @@ v1.3（2026-10-02）相對 v1.2 的變化（C10，實作裁定 15）：
   欄位可為 null → 同一個 :class:`EvidenceRecordV12` 即同時接受 v1.2（無 ``thread``）
   與 v1.3（有 ``thread``）兩種列。``scores.json`` 契約不變（仍 v1.2）。
 
+v1.4（2026-10-05）相對 v1.3 的變化（C11，實作裁定 17）：
+
+- ``thread`` 新增**可選** ``body``（主貼內文，截斷至 1200 字元）：當主貼**標題**
+  不帶版本號、版本只出現在內文時，``thread.title`` 單獨撐不起歸屬憑據，故補記內文。
+  同一個 :class:`ThreadRef` 即同時接受 v1.3（``thread`` 無 ``body``）與 v1.4
+  （``thread`` 含 ``body``）；v1.2（無 ``thread``）仍合法。X 推文列**不得**帶
+  ``thread``（含 ``body``）；``scores.json`` 契約不變（仍 v1.2）。
+
 兩種檔案：
 
 - ``data/scores.json``       → :class:`ScoresDocument`
@@ -64,9 +72,9 @@ from pydantic import (
     model_validator,
 )
 
-# 資料契約版本。C4 `arena build` 目前寫入 scores.json 的版本仍是 1.1（laya judge），
-# C8 的評審團版為 1.2；兩版 `arena validate` 都接受。`build` 更新為評審團後才會
-# 把 `SCHEMA_VERSION` 切到 `JURY_SCHEMA_VERSION`（屬後續任務）。
+# 資料契約版本。`SCHEMA_VERSION` 是舊的 laya judge 版（1.1），保留供 validate
+# 接受歷史檔；C8 起 `arena build` 實際寫入 scores.json 的是 `JURY_SCHEMA_VERSION`
+# （1.2，LLM 評審團）。兩版 `arena validate` 都接受（見 SUPPORTED_SCHEMA_VERSIONS）。
 SCHEMA_VERSION = 1.1
 JURY_SCHEMA_VERSION = 1.2
 # validate 接受的所有 scores.json 版本。
@@ -346,16 +354,25 @@ class MemberVotes(_ContractModel):
 
 
 class ThreadRef(_ContractModel):
-    """evidence v1.3 的 ``thread``：留言所屬主貼的歸屬依據（實作裁定 15）。
+    """evidence v1.3／v1.4 的 ``thread``：留言所屬主貼的歸屬依據（實作裁定 15／17）。
 
-    歸屬證據在主貼標題、情緒證據在留言（裁定 13 留言逐則化後兩者被拆開），
+    歸屬證據在主貼標題與內文、情緒證據在留言（裁定 13 留言逐則化後兩者被拆開），
     所以留言 row 記下「我繼承（或改判自）哪個主貼」。X 推文沒有留言結構，
     整個欄位省略（``None``）。
+
+    ``body``（v1.4，裁定 17）：主貼內文（截斷至 1200 字元，與 ``text`` 同規則）。
+    **可選**——主貼標題已帶版本號、或主貼無內文（如純連結／圖片）時省略；
+    當版本號只出現在內文時，它才是 ``thread.title`` 之外的歸屬憑據。
     """
 
     url: str = Field(min_length=1, description="主貼永久連結")
     title: str = Field(min_length=1, description="主貼標題（歸屬比對的依據文字）")
     modelId: str = Field(min_length=1, description="該串歸屬的模型 id")
+    body: str | None = Field(
+        default=None,
+        min_length=1,
+        description="主貼內文（截斷至 1200 字元）；標題已帶版本或無內文時省略（v1.4）",
+    )
 
 
 class EvidenceRecord(_ContractModel):
@@ -372,9 +389,10 @@ class EvidenceRecord(_ContractModel):
     )
     postedAt: datetime = Field(description="張貼時間（ISO 8601）")
     text: str = Field(min_length=1, description="貼文內容")
-    # v1.3（可選）：留言所屬主貼；v1.1／v1.2 的列沒有此欄，故可為 null。
+    # v1.3／v1.4（可選）：留言所屬主貼；v1.1／v1.2 的列沒有此欄，故可為 null。
     thread: ThreadRef | None = Field(
-        default=None, description="留言所屬主貼（url／title／modelId）；X 推文無此欄"
+        default=None,
+        description="留言所屬主貼（url／title／modelId，v1.4 另可帶 body）；X 推文無此欄",
     )
     # 以下兩欄由 C2 落地時先寫 null，交由 `arena score` 回填；
     # 因此「結構合法但尚未評分」是合法的 evidence（plan.md 實作裁定第 7 條）。
@@ -394,8 +412,10 @@ class EvidenceRecordV12(_ContractModel):
     ``juryVotes``／``judge`` 必填；``votes`` 為 null（例如某位評審呼叫失敗）
     時仍可保留部分 ``juryVotes`` 供稽核。
 
-    v1.3（實作裁定 15）只多一個**可選**的 ``thread`` 欄位，故同一個模型即同時
-    接受 v1.2（無 ``thread``）與 v1.3（有 ``thread``）兩種列。
+    v1.3（實作裁定 15）多一個**可選**的 ``thread`` 欄位；v1.4（實作裁定 17）再為
+    ``thread`` 加上**可選**的 ``body``（主貼內文）。故同一個模型即同時接受
+    v1.2（無 ``thread``）、v1.3（``thread`` 無 ``body``）與 v1.4（``thread`` 含
+    ``body``）三種列。
     """
 
     hash: str = Field(min_length=1, description="去重鍵（正規化內容的 hash）")
@@ -407,9 +427,10 @@ class EvidenceRecordV12(_ContractModel):
     )
     postedAt: datetime = Field(description="張貼時間（ISO 8601）")
     text: str = Field(min_length=1, description="貼文內容")
-    # v1.3（可選）：留言所屬主貼；X 推文與 v1.2 的列都沒有此欄。
+    # v1.3／v1.4（可選）：留言所屬主貼；X 推文與 v1.2 的列都沒有此欄。
     thread: ThreadRef | None = Field(
-        default=None, description="留言所屬主貼（url／title／modelId）；X 推文無此欄"
+        default=None,
+        description="留言所屬主貼（url／title／modelId，v1.4 另可帶 body）；X 推文無此欄",
     )
     votes: AggregatedVotes | None = Field(
         default=None, description="多數決聚合票；未評分或評審失敗為 null"

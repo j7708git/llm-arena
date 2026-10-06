@@ -20,7 +20,7 @@ dev = [
     "pytest>=8.0",
 ]
 # C3 評分用；本機 CPU 安裝請用 `uv pip install "llm-arena[score]" --torch-backend=cpu`
-# （laya 的 torch 預設會抓 CUDA wheel，見 docs/research/jev-scoring.md 坑 1）。
+# （laya 的 torch 預設會抓 CUDA wheel；laya 已淘汰、選型理由與坑清單詳 git 歷史）。
 score = [
     "laya==0.3.21",
 ]

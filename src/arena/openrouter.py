@@ -1,6 +1,6 @@
 """OpenRouter `/api/v1/models` 的抓取與解析（任務 C1）。
 
-依 `docs/research/openrouter-api.md`（R2 實測筆記）的規則處理：
+依 OpenRouter 公開 API 的實測規則處理（端點與定價的用途見 `docs/plan.md` §2「管線概觀」）：
 
 - 端點公開、免 key；一次抓回全部 text 模型（預設 `output_modalities=text`）。
 - 定價是 **USD／per token 的字串**，換成 schema 的 ``priceUsdPerMTok`` 要 ×1e6。
@@ -20,7 +20,7 @@ from typing import Any
 
 import httpx
 
-# 模型清單端點（免 key）。詳見 docs/research/openrouter-api.md。
+# 模型清單端點（免 key）。定價／context 的附掛見 docs/plan.md §2。
 MODELS_URL = "https://openrouter.ai/api/v1/models"
 
 # 單次請求逾時（秒）。回應約 750 KB，15 秒足夠。

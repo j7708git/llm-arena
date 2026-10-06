@@ -1,6 +1,6 @@
 """`arena collect` 的測試（任務 C2；C9 改為留言逐則＋版本精確歸屬），全程離線。
 
-引擎輸出以手刻 fixture 模擬（契約見 `docs/research/last30days-skill.md`），
+引擎輸出以手刻 fixture 模擬（引擎契約見 `docs/plan.md` §2「管線概觀」），
 runner、enricher 與 comment fetcher 皆以假物件注入；HTTP 補缺用 `httpx.MockTransport`。
 測試不連網、不寫 repo（輸出目錄在 pytest 的 tmp_path）。
 """
@@ -604,7 +604,59 @@ def test_comment_rows_carry_thread_ref(tmp_path: Path) -> None:
         "url": REDDIT_FIRST,
         "title": "Sonnet 5.5 is a joy to use",
         "modelId": "anthropic/claude-sonnet-5.5",
+        # v1.4（裁定 17）：主貼內文（引擎 summary）一併記錄，供標題不帶版本號時佐證。
+        "body": "I love Sonnet 5.5. submitted by /u/alice",
     }
+
+
+def test_comment_rows_carry_thread_body(tmp_path: Path) -> None:
+    """留言 row 的 thread.body 是主貼內文，且截斷至 MAX_TEXT_CHARS（裁定 17）。"""
+    record = None
+    comments = {
+        ("reddit", REDDIT_FIRST): [
+            comment("no model here", source="reddit", url="a")
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: make_payload(BASE_RESULTS[:1])}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+    record = read_today(tmp_path)[0]
+    body = record["thread"]["body"]
+    assert body.startswith("I love Sonnet 5.5.")
+    assert len(body) <= collect.MAX_TEXT_CHARS
+    # 版本號在 body（不在 title）時，仍能精確佐證該串歸屬。
+    assert collect.classify_attribution(
+        body, {"id": "anthropic/claude-sonnet-5.5", "name": SONNET55}, [{"id": "anthropic/claude-sonnet-5.5", "name": SONNET55}]
+    ).keep
+
+
+def test_comment_row_omits_thread_body_when_same_as_title(tmp_path: Path) -> None:
+    """主貼 summary 與標題相同（HN 常見）時，不寫多餘的 thread.body。"""
+    payload = make_payload(
+        [
+            {
+                "source": "hackernews",
+                "url": "https://example.com/hn-thread",
+                "published_at": "2026-09-21",
+                "title": "Sonnet 5.5 review",
+                "summary": "Sonnet 5.5 review",
+            }
+        ]
+    )
+    comments = {
+        ("hn", "https://example.com/hn-thread"): [
+            comment("no model here", source="hn", url="a")
+        ]
+    }
+    run_collect(
+        tmp_path,
+        FakeRunner({SONNET55: payload}),
+        comment_fetcher=FakeCommentFetcher(comments),
+    )
+    record = read_today(tmp_path)[0]
+    assert "body" not in record["thread"]
 
 
 def test_x_row_never_carries_thread(tmp_path: Path) -> None:
